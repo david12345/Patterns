@@ -154,6 +154,30 @@
       cursor: not-allowed;
     }
 
+    #download-btn {
+      background: transparent;
+      color: #c3a6ff;
+      border: 1px solid #c3a6ff;
+      border-radius: 8px;
+      padding: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      width: 100%;
+      letter-spacing: 0.5px;
+      transition: background 0.15s, color 0.15s;
+    }
+
+    #download-btn:hover:not(:disabled) {
+      background: rgba(195, 166, 255, 0.12);
+    }
+
+    #download-btn:disabled {
+      border-color: #3a3a5e;
+      color: #4a4a6e;
+      cursor: not-allowed;
+    }
+
     #error-msg {
       background: #2e1a1a;
       border: 1px solid #8b3a3a;
@@ -269,6 +293,7 @@
     </div>
 
     <button id="draw-btn">Draw</button>
+    <button id="download-btn" disabled>Download PNG</button>
 
     <div id="error-msg"></div>
 
@@ -510,6 +535,7 @@ const rangeMinEl   = document.getElementById('range-min');
 const rangeMaxEl   = document.getElementById('range-max');
 const resSel       = document.getElementById('res-select');
 const errorMsg     = document.getElementById('error-msg');
+const downloadBtn  = document.getElementById('download-btn');
 const hoverInfo    = document.getElementById('hover-info');
 const statusBar    = document.getElementById('status-bar');
 
@@ -564,12 +590,26 @@ function handleDraw() {
 
     drawBtn.disabled = false;
     drawBtn.textContent = 'Draw';
+    downloadBtn.disabled = false;
     statusBar.textContent =
       `${res}×${res} · ${ms} ms · z ∈ [${zMin.toFixed(4)}, ${zMax.toFixed(4)}]`;
   }, 0);
 }
 
+function handleDownload() {
+  const expr = exprInput.value.trim() || 'pattern';
+  const slug = expr.replace(/[^a-zA-Z0-9+\-]/g, '_').replace(/_+/g, '_').slice(0, 40);
+  const res  = canvas.width;
+  const filename = `pattern_${slug}_${res}x${res}.png`;
+
+  const link = document.createElement('a');
+  link.download = filename;
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+}
+
 drawBtn.addEventListener('click', handleDraw);
+downloadBtn.addEventListener('click', handleDownload);
 
 exprInput.addEventListener('keydown', e => {
   if (e.key === 'Enter') handleDraw();
