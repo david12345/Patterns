@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>2D Pattern Explorer</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #0f0e17;
+      color: #e8e8f0;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      font-size: 14px;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      background: #1a1a2e;
+      border-bottom: 1px solid #2d2d4e;
+      padding: 12px 20px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    header h1 {
+      font-size: 18px;
+      font-weight: 600;
+      color: #c3a6ff;
+      letter-spacing: 0.5px;
+    }
+
+    header .subtitle {
+      color: #7c7c9e;
+      font-size: 12px;
+    }
+
+    #app {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* ── Controls panel ── */
+    #controls {
+      width: 280px;
+      min-width: 280px;
+      background: #1a1a2e;
+      border-right: 1px solid #2d2d4e;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      overflow-y: auto;
+    }
+
+    .control-group {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .control-group label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: #7c7c9e;
+      font-weight: 600;
+    }
+
+    .expr-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: #0f0e17;
+      border: 1px solid #3a3a5e;
+      border-radius: 6px;
+      padding: 4px 8px;
+      transition: border-color 0.2s;
+    }
+
+    .expr-row:focus-within {
+      border-color: #c3a6ff;
+    }
+
+    .expr-prefix {
+      color: #c3a6ff;
+      font-family: monospace;
+      font-size: 14px;
+      white-space: nowrap;
+      user-select: none;
+    }
+
+    #expr-input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      outline: none;
+      color: #e8e8f0;
+      font-family: monospace;
+      font-size: 14px;
+      min-width: 0;
+    }
+
+    #expr-input::placeholder { color: #4a4a6e; }
+
+    select, input[type="number"] {
+      background: #0f0e17;
+      border: 1px solid #3a3a5e;
+      border-radius: 6px;
+      color: #e8e8f0;
+      padding: 6px 8px;
+      font-size: 13px;
+      width: 100%;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    select:focus, input[type="number"]:focus {
+      border-color: #c3a6ff;
+    }
+
+    .range-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .range-row input { flex: 1; }
+    .range-row span { color: #7c7c9e; font-size: 12px; white-space: nowrap; }
+
+    #draw-btn {
+      background: #c3a6ff;
+      color: #0f0e17;
+      border: none;
+      border-radius: 8px;
+      padding: 10px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      width: 100%;
+      letter-spacing: 0.5px;
+      transition: background 0.15s, transform 0.1s;
+    }
+
+    #draw-btn:hover:not(:disabled) { background: #d9c2ff; }
+    #draw-btn:active:not(:disabled) { transform: scale(0.98); }
+    #draw-btn:disabled {
+      background: #3a3a5e;
+      color: #7c7c9e;
+      cursor: not-allowed;
+    }
+
+    #error-msg {
+      background: #2e1a1a;
+      border: 1px solid #8b3a3a;
+      border-radius: 6px;
+      color: #ff8080;
+      padding: 8px 10px;
+      font-size: 12px;
+      font-family: monospace;
+      word-break: break-word;
+      display: none;
+    }
+
+    .divider {
+      border: none;
+      border-top: 1px solid #2d2d4e;
+    }
+
+    .help-text {
+      font-size: 11px;
+      color: #5a5a7e;
+      line-height: 1.5;
+    }
+
+    .help-text code {
+      background: #2a2a40;
+      border-radius: 3px;
+      padding: 1px 4px;
+      font-family: monospace;
+      color: #a0a0c0;
+    }
+
+    /* ── Canvas area ── */
+    #canvas-area {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      gap: 10px;
+      background: #0f0e17;
+      overflow: auto;
+    }
+
+    #canvas-wrapper {
+      position: relative;
+      line-height: 0;
+      box-shadow: 0 0 40px rgba(195, 166, 255, 0.1);
+    }
+
+    #pattern-canvas {
+      display: block;
+      max-width: 100%;
+      max-height: calc(100vh - 80px);
+      cursor: crosshair;
+    }
+
+    #hover-info {
+      position: absolute;
+      bottom: 8px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(15, 14, 23, 0.85);
+      border: 1px solid #2d2d4e;
+      border-radius: 4px;
+      padding: 3px 10px;
+      font-family: monospace;
+      font-size: 11px;
+      color: #a0a0c0;
+      pointer-events: none;
+      white-space: nowrap;
+      opacity: 0;
+      transition: opacity 0.15s;
+    }
+
+    #canvas-wrapper:hover #hover-info { opacity: 1; }
+
+    #status-bar {
+      font-size: 11px;
+      color: #5a5a7e;
+      font-family: monospace;
+    }
+
+    /* ── Responsive ── */
+    @media (max-width: 700px) {
+      #app { flex-direction: column; }
+      #controls {
+        width: 100%;
+        min-width: unset;
+        border-right: none;
+        border-bottom: 1px solid #2d2d4e;
+      }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>2D Pattern Explorer</h1>
+  <span class="subtitle">z = f(x, y) → colour</span>
+</header>
+
+<div id="app">
+
+  <div id="controls">
+
+    <div class="control-group">
+      <label>Function f(x, y)</label>
+      <div class="expr-row">
+        <span class="expr-prefix">z =</span>
+        <input type="text" id="expr-input" placeholder="sin(x) * cos(y)" autocomplete="off" spellcheck="false">
+      </div>
+    </div>
+
+    <button id="draw-btn">Draw</button>
+
+    <div id="error-msg"></div>
+
+    <div class="control-group">
+      <label>Preset examples</label>
+      <select id="preset-select">
+        <option value="">— choose a preset —</option>
+        <option value="sin(x) * cos(y)">sin(x) · cos(y)</option>
+        <option value="sin(sqrt(x*x + y*y))">Ripple: sin(√(x²+y²))</option>
+        <option value="sin(x*x + y*y)">Circular waves: sin(x²+y²)</option>
+        <option value="(x*x - y*y) / (PI*PI)">Saddle surface</option>
+        <option value="abs(sin(x) + cos(y))">Grid interference</option>
+        <option value="sin(5*x) * cos(5*y)">High-freq grid</option>
+        <option value="atan2(y, x) / PI">Angle map</option>
+        <option value="(floor(x) + floor(y)) % 2">Checkerboard</option>
+        <option value="sin(x*y)">sin(x·y)</option>
+        <option value="cos(x) + sin(y) - sin(x*y)">Interference mix</option>
+        <option value="sin(x*x - y*y)">Hyperbolic waves</option>
+        <option value="abs(sin(3*atan2(y,x)) * sqrt(x*x+y*y))">Star ripple</option>
+      </select>
+    </div>
+
+    <hr class="divider">
+
+    <div class="control-group">
+      <label>Colormap</label>
+      <select id="colormap-select">
+        <option value="rainbow">HSL Rainbow</option>
+        <option value="grayscale">Grayscale</option>
+        <option value="hot">Hot (black → red → white)</option>
+        <option value="cool">Cool (blue → cyan)</option>
+        <option value="plasma">Plasma (purple → yellow)</option>
+        <option value="seismic">Seismic (blue → white → red)</option>
+      </select>
+    </div>
+
+    <div class="control-group">
+      <label>x / y coordinate range</label>
+      <div class="range-row">
+        <input type="number" id="range-min" value="-3.14159" step="0.5">
+        <span>to</span>
+        <input type="number" id="range-max" value="3.14159" step="0.5">
+      </div>
+    </div>
+
+    <div class="control-group">
+      <label>Resolution</label>
+      <select id="res-select">
+        <option value="300">300 × 300 (fast)</option>
+        <option value="600" selected>600 × 600 (default)</option>
+        <option value="900">900 × 900 (detailed)</option>
+        <option value="1200">1200 × 1200 (slow)</option>
+      </select>
+    </div>
+
+    <hr class="divider">
+
+    <div class="help-text">
+      Available: <code>sin cos tan asin acos atan atan2 abs sqrt pow log log2 floor ceil round min max sign sinh cosh tanh PI E</code><br><br>
+      Use <code>**</code> or <code>^</code> for powers.<br>
+      Coordinates span the range above; positive y is up.
+    </div>
+
+  </div>
+
+  <div id="canvas-area">
+    <div id="canvas-wrapper">
+      <canvas id="pattern-canvas" width="600" height="600"></canvas>
+      <div id="hover-info"></div>
+    </div>
+    <div id="status-bar">ready</div>
+  </div>
+
+</div>
+
+<script>
+// === MATH NAMES (injected as parameters into user function) ===
+const MATH_NAMES = [
+  'sin','cos','tan','asin','acos','atan','atan2',
+  'abs','sqrt','pow','log','log2','log10',
+  'floor','ceil','round','min','max','sign',
+  'sinh','cosh','tanh','PI','E'
+];
+const MATH_VALUES = MATH_NAMES.map(n => Math[n] !== undefined ? Math[n] : Math[n]);
+
+// === EXPRESSION COMPILER ===
+function compileExpression(exprStr) {
+  // Convenience: replace ^ with ** so x^2 works
+  const src = exprStr.replace(/\^/g, '**');
+  try {
+    const fn = new Function('x', 'y', ...MATH_NAMES,
+      `"use strict"; return (${src});`
+    );
+    // Smoke-test at (0,0)
+    const v = fn(0, 0, ...MATH_VALUES);
+    if (v === undefined) throw new Error('Function returned undefined');
+    return { fn, error: null };
+  } catch (e) {
+    return { fn: null, error: e.message };
+  }
+}
+
+function safeEval(fn, x, y) {
+  try {
+    const v = fn(x, y, ...MATH_VALUES);
+    return typeof v === 'number' ? v : NaN;
+  } catch {
+    return NaN;
+  }
+}
+
+// === COORDINATE MAPPING ===
+function pixelToMath(px, py, W, H, xMin, xMax, yMin, yMax) {
+  return [
+    xMin + (px / (W - 1)) * (xMax - xMin),
+    yMax - (py / (H - 1)) * (yMax - yMin)  // flip y: canvas↓ = math↑
+  ];
+}
+
+// === HSL → RGB helper ===
+function hslToRgb(h, s, l) {
+  h = ((h % 360) + 360) % 360;
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const x = c * (1 - Math.abs((h / 60) % 2 - 1));
+  const m = l - c / 2;
+  let r, g, b;
+  if      (h < 60)  { r=c; g=x; b=0; }
+  else if (h < 120) { r=x; g=c; b=0; }
+  else if (h < 180) { r=0; g=c; b=x; }
+  else if (h < 240) { r=0; g=x; b=c; }
+  else if (h < 300) { r=x; g=0; b=c; }
+  else              { r=c; g=0; b=x; }
+  return [Math.round((r+m)*255), Math.round((g+m)*255), Math.round((b+m)*255)];
+}
+
+// === COLORMAPS  t ∈ [0,1] → [r,g,b] ===
+const COLORMAPS = {
+  grayscale(t) {
+    const v = Math.round(t * 255);
+    return [v, v, v];
+  },
+  rainbow(t) {
+    return hslToRgb(t * 360, 1.0, 0.5);
+  },
+  hot(t) {
+    // black→red→yellow→white  (3 equal segments)
+    if (t < 1/3) {
+      const v = Math.round(t * 3 * 255);
+      return [v, 0, 0];
+    }
+    if (t < 2/3) {
+      const v = Math.round((t - 1/3) * 3 * 255);
+      return [255, v, 0];
+    }
+    const v = Math.round((t - 2/3) * 3 * 255);
+    return [255, 255, v];
+  },
+  cool(t) {
+    // blue→cyan: green 0→255, red stays 0
+    return [0, Math.round(t * 255), 255];
+  },
+  plasma(t) {
+    // purple→blue→green→yellow: approximate via HSL
+    return hslToRgb(270 - t * 180, 1.0, 0.2 + t * 0.5);
+  },
+  seismic(t) {
+    // blue (t=0) → white (t=0.5) → red (t=1)
+    if (t <= 0.5) {
+      const u = t * 2;
+      return [Math.round(u * 255), Math.round(u * 255), 255];
+    }
+    const u = (t - 0.5) * 2;
+    return [255, Math.round((1 - u) * 255), Math.round((1 - u) * 255)];
+  }
+};
+
+// === RENDERING PIPELINE ===
+let lastZValues = null;
+let lastRenderParams = null;
+
+function render(canvas, fn, colormapName, xMin, xMax, yMin, yMax) {
+  const W = canvas.width, H = canvas.height;
+  const ctx = canvas.getContext('2d');
+
+  // Phase 1: compute all z values
+  const zValues = new Float64Array(W * H);
+  let zMin = Infinity, zMax = -Infinity;
+
+  for (let py = 0; py < H; py++) {
+    for (let px = 0; px < W; px++) {
+      const [x, y] = pixelToMath(px, py, W, H, xMin, xMax, yMin, yMax);
+      const z = safeEval(fn, x, y);
+      zValues[py * W + px] = z;
+      if (isFinite(z)) {
+        if (z < zMin) zMin = z;
+        if (z > zMax) zMax = z;
+      }
+    }
+  }
+
+  const zRange = zMax - zMin;
+  const normalize = zRange < 1e-12
+    ? () => 0.5
+    : z => (z - zMin) / zRange;
+
+  // Phase 2: map z values to pixel colours via ImageData
+  const imageData = ctx.createImageData(W, H);
+  const data = imageData.data;
+  const colorfn = COLORMAPS[colormapName];
+
+  for (let i = 0; i < W * H; i++) {
+    const z = zValues[i];
+    const base = i * 4;
+    if (!isFinite(z)) {
+      data[base] = 0; data[base+1] = 0; data[base+2] = 0; data[base+3] = 255;
+    } else {
+      const t = normalize(z);
+      const [r, g, b] = colorfn(t);
+      data[base] = r; data[base+1] = g; data[base+2] = b; data[base+3] = 255;
+    }
+  }
+
+  ctx.putImageData(imageData, 0, 0);
+
+  // Store for hover overlay
+  lastZValues = zValues;
+  lastRenderParams = { W, H, xMin, xMax, yMin, yMax };
+
+  return { zMin, zMax, total: W * H };
+}
+
+// === UI / EVENT WIRING ===
+const canvas       = document.getElementById('pattern-canvas');
+const exprInput    = document.getElementById('expr-input');
+const drawBtn      = document.getElementById('draw-btn');
+const presetSelect = document.getElementById('preset-select');
+const colormapSel  = document.getElementById('colormap-select');
+const rangeMinEl   = document.getElementById('range-min');
+const rangeMaxEl   = document.getElementById('range-max');
+const resSel       = document.getElementById('res-select');
+const errorMsg     = document.getElementById('error-msg');
+const hoverInfo    = document.getElementById('hover-info');
+const statusBar    = document.getElementById('status-bar');
+
+function showError(msg) {
+  errorMsg.textContent = msg;
+  errorMsg.style.display = 'block';
+}
+
+function clearError() {
+  errorMsg.style.display = 'none';
+}
+
+function getRange() {
+  const mn = parseFloat(rangeMinEl.value);
+  const mx = parseFloat(rangeMaxEl.value);
+  if (isNaN(mn) || isNaN(mx) || mn >= mx) {
+    showError('Invalid range: min must be less than max.');
+    return null;
+  }
+  return [mn, mx];
+}
+
+function handleDraw() {
+  clearError();
+
+  const expr = exprInput.value.trim();
+  if (!expr) { showError('Please enter a function.'); return; }
+
+  const range = getRange();
+  if (!range) return;
+  const [rMin, rMax] = range;
+
+  const { fn, error } = compileExpression(expr);
+  if (error) { showError('Error: ' + error); return; }
+
+  const res = parseInt(resSel.value, 10);
+  canvas.width  = res;
+  canvas.height = res;
+
+  const colormap = colormapSel.value;
+
+  drawBtn.disabled = true;
+  drawBtn.textContent = 'Drawing…';
+  statusBar.textContent = `rendering ${res}×${res}…`;
+
+  // setTimeout(0) lets the browser repaint the disabled button
+  // before the synchronous render loop blocks the main thread
+  setTimeout(() => {
+    const t0 = performance.now();
+    const { zMin, zMax } = render(canvas, fn, colormap, rMin, rMax, rMin, rMax);
+    const ms = (performance.now() - t0).toFixed(0);
+
+    drawBtn.disabled = false;
+    drawBtn.textContent = 'Draw';
+    statusBar.textContent =
+      `${res}×${res} · ${ms} ms · z ∈ [${zMin.toFixed(4)}, ${zMax.toFixed(4)}]`;
+  }, 0);
+}
+
+drawBtn.addEventListener('click', handleDraw);
+
+exprInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter') handleDraw();
+});
+
+presetSelect.addEventListener('change', () => {
+  if (presetSelect.value) {
+    exprInput.value = presetSelect.value;
+    presetSelect.value = '';
+    handleDraw();
+  }
+});
+
+// Hover overlay: show math coords + z value
+canvas.addEventListener('mousemove', e => {
+  if (!lastZValues || !lastRenderParams) return;
+  const rect  = canvas.getBoundingClientRect();
+  const scaleX = canvas.width  / rect.width;
+  const scaleY = canvas.height / rect.height;
+  const px = Math.floor((e.clientX - rect.left) * scaleX);
+  const py = Math.floor((e.clientY - rect.top)  * scaleY);
+  const { W, H, xMin, xMax, yMin, yMax } = lastRenderParams;
+  if (px < 0 || px >= W || py < 0 || py >= H) return;
+  const [x, y] = pixelToMath(px, py, W, H, xMin, xMax, yMin, yMax);
+  const z = lastZValues[py * W + px];
+  const zStr = isFinite(z) ? z.toFixed(4) : (isNaN(z) ? 'NaN' : '∞');
+  hoverInfo.textContent = `x=${x.toFixed(3)}  y=${y.toFixed(3)}  z=${zStr}`;
+});
+
+canvas.addEventListener('mouseleave', () => {
+  hoverInfo.textContent = '';
+});
+
+// Draw default on load
+window.addEventListener('load', () => {
+  exprInput.value = 'sin(x) * cos(y)';
+  handleDraw();
+});
+</script>
+</body>
+</html>
