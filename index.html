@@ -555,7 +555,7 @@ function render3D(fn, colormapName, xMin, xMax, yMin, yMax) {
   }
 
   const res   = parseInt(resSel.value, 10);
-  const segs  = Math.min(Math.floor(res / 4), 300); // max 300 segments
+  const segs  = res;
   const verts = segs + 1;
 
   // PlaneGeometry vertex order: iy outer, ix inner — matches our loop
@@ -718,15 +718,14 @@ function handleDraw() {
 
   } else {
     const res  = parseInt(resSel.value, 10);
-    const segs = Math.min(Math.floor(res / 4), 300);
-    statusBar.textContent = `rendering 3D surface (${segs}×${segs} grid)…`;
+    statusBar.textContent = `rendering 3D surface (${res}×${res} grid)…`;
     setTimeout(() => {
       const t0 = performance.now();
       const { zMin, zMax } = render3D(fn, colormap, rMin, rMax, rMin, rMax);
       const ms = (performance.now() - t0).toFixed(0);
       drawBtn.disabled = false; drawBtn.textContent = 'Draw';
       downloadBtn.disabled = false; fullsizeBtn.disabled = false;
-      statusBar.textContent = `3D ${segs}×${segs} grid · ${ms} ms · z ∈ [${zMin.toFixed(4)}, ${zMax.toFixed(4)}]`;
+      statusBar.textContent = `3D ${res}×${res} grid · ${ms} ms · z ∈ [${zMin.toFixed(4)}, ${zMax.toFixed(4)}]`;
     }, 0);
   }
 }
