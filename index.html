@@ -199,6 +199,17 @@
     .mb-nav-btn:hover:not(:disabled) { background: rgba(195,166,255,0.1); color: #c3a6ff; }
     .mb-nav-btn:disabled { color: #4a4a6e; cursor: not-allowed; }
 
+    .mb-voyage-btn {
+      background: rgba(109,224,134,0.08); color: #6de086;
+      border: 1px solid #3a6e4a; border-radius: 8px;
+      padding: 9px; font-size: 13px; font-weight: 700;
+      cursor: pointer; width: 100%; letter-spacing: 0.3px;
+      transition: background 0.15s, color 0.15s;
+    }
+    .mb-voyage-btn:hover { background: rgba(109,224,134,0.18); }
+    .mb-voyage-btn.voyaging { background: rgba(224,109,109,0.08); color: #e06d6d; border-color: #6e3a3a; }
+    .mb-voyage-btn.voyaging:hover { background: rgba(224,109,109,0.18); }
+
     /* ── Three.js container ── */
     #three-container {
       display: none;
@@ -360,6 +371,7 @@
         <button id="undo-zoom-btn" class="mb-nav-btn" disabled>&#8592; Undo zoom</button>
         <button id="reset-zoom-btn" class="mb-nav-btn">Reset view</button>
       </div>
+      <button id="voyage-btn" class="mb-voyage-btn">&#9654; Start Voyage</button>
       <div class="help-text" style="font-size:10px; margin-top:2px">
         Drag on the image to zoom into a region
       </div>
@@ -800,6 +812,32 @@ let savedFormulaRange = null; // saved when switching to Mandelbrot
 let mbBounds = { xMin: -2, xMax: 2, yMin: -2, yMax: 2 };
 let mbHistory = [];
 
+// === VOYAGE STATE ===
+let voyaging    = false;
+let voyageRAF   = null;
+let voyageIdx   = 0;
+let voyagePhase = 'hold';  // 'transition' | 'hold'
+let voyageT0    = 0;
+let voyageFrom  = null;
+const VOYAGE_RES  = 300;
+const VOYAGE_ITER = 200;
+
+const VOYAGE_WAYPOINTS = [
+  { label: 'Overview',        cx: -0.5,    cy:  0,      scale: 2.5,   transMs: 1500, holdMs:  800 },
+  { label: 'Seahorse Valley', cx: -0.7453, cy:  0.1127, scale: 0.3,   transMs: 3000, holdMs:  500 },
+  { label: 'Seahorse Valley', cx: -0.7453, cy:  0.1127, scale: 0.003, transMs: 6000, holdMs: 4000 },
+  { label: 'Overview',        cx: -0.5,    cy:  0,      scale: 2.5,   transMs: 3000, holdMs:  500 },
+  { label: 'Elephant Valley', cx:  0.285,  cy:  0.013,  scale: 0.2,   transMs: 3000, holdMs:  500 },
+  { label: 'Elephant Valley', cx:  0.285,  cy:  0.013,  scale: 0.005, transMs: 5000, holdMs: 4000 },
+  { label: 'Overview',        cx: -0.5,    cy:  0,      scale: 2.5,   transMs: 3000, holdMs:  500 },
+  { label: 'Mini Mandelbrot', cx: -1.755,  cy:  0,      scale: 0.15,  transMs: 3000, holdMs:  500 },
+  { label: 'Mini Mandelbrot', cx: -1.755,  cy:  0,      scale: 0.003, transMs: 5000, holdMs: 4000 },
+  { label: 'Overview',        cx: -0.5,    cy:  0,      scale: 2.5,   transMs: 3000, holdMs:  500 },
+  { label: 'Double Spiral',   cx: -0.5252, cy:  0.5292, scale: 0.15,  transMs: 3000, holdMs:  500 },
+  { label: 'Double Spiral',   cx: -0.5252, cy:  0.5292, scale: 0.003, transMs: 5000, holdMs: 4000 },
+  { label: 'Overview',        cx: -0.5,    cy:  0,      scale: 2.5,   transMs: 2500, holdMs: 1000 },
+];
+
 // === DOM REFS ===
 const canvas         = document.getElementById('pattern-canvas');
 const canvasWrapper  = document.getElementById('canvas-wrapper');
@@ -831,6 +869,7 @@ const controlsBackdrop  = document.getElementById('controls-backdrop');
 const selectionCanvas   = document.getElementById('selection-canvas');
 const undoZoomBtn       = document.getElementById('undo-zoom-btn');
 const resetZoomBtn      = document.getElementById('reset-zoom-btn');
+const voyageBtn         = document.getElementById('voyage-btn');
 
 function openControls()  {
   controlsPanel.classList.add('panel-open');
@@ -892,6 +931,9 @@ function setMode(mode) {
     mbHistory = [];
     undoZoomBtn.disabled = true;
   }
+
+  // Voyage is mb2d-only
+  if (mode !== 'mb2d') stopVoyage();
 }
 
 function handleDraw() {
@@ -984,6 +1026,81 @@ function handleDownload() {
   link.href = src.toDataURL('image/png');
   link.click();
 }
+
+// === MANDELBROT VOYAGE ===
+function waypointToBounds(wp) {
+  return { xMin: wp.cx - wp.scale, xMax: wp.cx + wp.scale,
+           yMin: wp.cy - wp.scale, yMax: wp.cy + wp.scale };
+}
+
+function easeInOut(t) {
+  return t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t + 2, 3) / 2;
+}
+
+function interpolateBounds(a, b, t) {
+  const e   = easeInOut(t);
+  const aCx = (a.xMin + a.xMax) / 2, aCy = (a.yMin + a.yMax) / 2;
+  const bCx = (b.xMin + b.xMax) / 2, bCy = (b.yMin + b.yMax) / 2;
+  const aS  = (a.xMax - a.xMin) / 2,  bS  = (b.xMax - b.xMin) / 2;
+  const cx  = aCx + (bCx - aCx) * e,  cy  = aCy + (bCy - aCy) * e;
+  const s   = Math.exp(Math.log(aS) + (Math.log(bS) - Math.log(aS)) * e);
+  return { xMin: cx - s, xMax: cx + s, yMin: cy - s, yMax: cy + s };
+}
+
+function voyageStep(now) {
+  if (!voyaging) return;
+  const wp      = VOYAGE_WAYPOINTS[voyageIdx];
+  const elapsed = now - voyageT0;
+
+  if (voyagePhase === 'transition') {
+    const t = Math.min(1, elapsed / wp.transMs);
+    mbBounds = interpolateBounds(voyageFrom, waypointToBounds(wp), t);
+    if (canvas.width !== VOYAGE_RES) { canvas.width = canvas.height = VOYAGE_RES; }
+    renderMandelbrot2D(canvas, colormapSel.value,
+      mbBounds.xMin, mbBounds.xMax, mbBounds.yMin, mbBounds.yMax, VOYAGE_ITER);
+    if (t >= 1) {
+      voyagePhase = 'hold';
+      voyageT0    = now;
+      statusBar.textContent = `Voyage: ${wp.label}`;
+    }
+  } else {
+    if (elapsed >= wp.holdMs) {
+      voyageFrom  = { ...mbBounds };
+      voyageIdx   = (voyageIdx + 1) % VOYAGE_WAYPOINTS.length;
+      voyagePhase = 'transition';
+      voyageT0    = now;
+    }
+  }
+  voyageRAF = requestAnimationFrame(voyageStep);
+}
+
+function startVoyage() {
+  voyaging = true;
+  voyageBtn.textContent = '■ Stop Voyage';
+  voyageBtn.classList.add('voyaging');
+  selectionCanvas.style.pointerEvents = 'none';
+  drawBtn.disabled = undoZoomBtn.disabled = resetZoomBtn.disabled = true;
+  voyageFrom  = { ...mbBounds };
+  voyageIdx   = 0;
+  voyagePhase = 'transition';
+  voyageT0    = performance.now();
+  voyageRAF   = requestAnimationFrame(voyageStep);
+}
+
+function stopVoyage() {
+  if (!voyaging) return;
+  cancelAnimationFrame(voyageRAF);
+  voyageRAF = null; voyaging = false;
+  voyageBtn.textContent = '▶ Start Voyage';
+  voyageBtn.classList.remove('voyaging');
+  selectionCanvas.style.pointerEvents = '';
+  drawBtn.disabled      = false;
+  resetZoomBtn.disabled = false;
+  undoZoomBtn.disabled  = mbHistory.length === 0;
+  handleDraw();
+}
+
+voyageBtn.addEventListener('click', () => voyaging ? stopVoyage() : startVoyage());
 
 // === MANDELBROT SELECTION ===
 
