@@ -179,6 +179,26 @@
     }
     #canvas-wrapper:hover #hover-info { opacity: 1; }
 
+    /* ── Mandelbrot selection overlay ── */
+    #selection-canvas {
+      position: absolute; inset: 0;
+      width: 100%; height: 100%;
+      display: none;
+      cursor: crosshair;
+    }
+
+    /* ── Mandelbrot nav buttons (undo / reset) ── */
+    .mb-nav-row { display: flex; gap: 6px; }
+    .mb-nav-btn {
+      flex: 1; background: transparent;
+      border: 1px solid #3a3a5e; border-radius: 6px;
+      color: #a0a0c0; padding: 7px 4px;
+      font-size: 12px; font-weight: 600;
+      cursor: pointer; transition: background 0.15s, color 0.15s;
+    }
+    .mb-nav-btn:hover:not(:disabled) { background: rgba(195,166,255,0.1); color: #c3a6ff; }
+    .mb-nav-btn:disabled { color: #4a4a6e; cursor: not-allowed; }
+
     /* ── Three.js container ── */
     #three-container {
       display: none;
@@ -336,6 +356,13 @@
         <label>Max iterations</label>
         <input type="number" id="max-iter" value="256" min="10" max="10000" step="64">
       </div>
+      <div class="mb-nav-row">
+        <button id="undo-zoom-btn" class="mb-nav-btn" disabled>&#8592; Undo zoom</button>
+        <button id="reset-zoom-btn" class="mb-nav-btn">Reset view</button>
+      </div>
+      <div class="help-text" style="font-size:10px; margin-top:2px">
+        Drag on the image to zoom into a region
+      </div>
     </div>
 
     <button id="draw-btn">Draw</button>
@@ -390,6 +417,7 @@
   <div id="canvas-area">
     <div id="canvas-wrapper">
       <canvas id="pattern-canvas" width="600" height="600"></canvas>
+      <canvas id="selection-canvas"></canvas>
       <div id="hover-info"></div>
     </div>
     <div id="three-container"></div>
@@ -769,6 +797,8 @@ function renderMandelbrot3D(colormapName, xMin, xMax, yMin, yMax, maxIter) {
 // === RENDER MODE ===
 let renderMode = '2d';
 let savedFormulaRange = null; // saved when switching to Mandelbrot
+let mbBounds = { xMin: -2, xMax: 2, yMin: -2, yMax: 2 };
+let mbHistory = [];
 
 // === DOM REFS ===
 const canvas         = document.getElementById('pattern-canvas');
@@ -797,7 +827,10 @@ const helpFormula       = document.getElementById('help-formula');
 const helpMandelbrot    = document.getElementById('help-mandelbrot');
 const controlsPanel     = document.getElementById('controls');
 const controlsToggleEl = document.getElementById('controls-toggle');
-const controlsBackdrop = document.getElementById('controls-backdrop');
+const controlsBackdrop  = document.getElementById('controls-backdrop');
+const selectionCanvas   = document.getElementById('selection-canvas');
+const undoZoomBtn       = document.getElementById('undo-zoom-btn');
+const resetZoomBtn      = document.getElementById('reset-zoom-btn');
 
 function openControls()  {
   controlsPanel.classList.add('panel-open');
@@ -849,6 +882,16 @@ function setMode(mode) {
   ALL_MODE_BTNS.forEach(b => b.classList.remove('active'));
   const btnMap = { '2d': modeBtn2d, '3d': modeBtn3d, 'mb2d': modeBtnMb2d, 'mb3d': modeBtnMb3d };
   btnMap[mode].classList.add('active');
+
+  // Selection overlay only visible in Mandelbrot 2D
+  selectionCanvas.style.display = mode === 'mb2d' ? 'block' : 'none';
+
+  // Reset selection state when first entering Mandelbrot mode
+  if (!wasMandelbrot && isMandelbrot) {
+    mbBounds = { xMin: -2, xMax: 2, yMin: -2, yMax: 2 };
+    mbHistory = [];
+    undoZoomBtn.disabled = true;
+  }
 }
 
 function handleDraw() {
@@ -899,10 +942,11 @@ function handleDraw() {
   } else if (renderMode === 'mb2d') {
     const maxIter = Math.max(10, parseInt(maxIterEl.value, 10) || 256);
     canvas.width = res; canvas.height = res;
+    selectionCanvas.width = res; selectionCanvas.height = res;
     statusBar.textContent = `rendering Mandelbrot ${res}×${res} · ${maxIter} iter…`;
     setTimeout(() => {
       const t0 = performance.now();
-      const { zMin, zMax } = renderMandelbrot2D(canvas, colormap, rMin, rMax, rMin, rMax, maxIter);
+      const { zMin, zMax } = renderMandelbrot2D(canvas, colormap, mbBounds.xMin, mbBounds.xMax, mbBounds.yMin, mbBounds.yMax, maxIter);
       const ms = (performance.now() - t0).toFixed(0);
       drawBtn.disabled = false; drawBtn.textContent = 'Draw';
       downloadBtn.disabled = false; fullsizeBtn.disabled = false;
@@ -914,7 +958,7 @@ function handleDraw() {
     statusBar.textContent = `rendering Mandelbrot 3D (${res}×${res} grid · ${maxIter} iter)…`;
     setTimeout(() => {
       const t0 = performance.now();
-      const { zMin, zMax } = renderMandelbrot3D(colormap, rMin, rMax, rMin, rMax, maxIter);
+      const { zMin, zMax } = renderMandelbrot3D(colormap, mbBounds.xMin, mbBounds.xMax, mbBounds.yMin, mbBounds.yMax, maxIter);
       const ms = (performance.now() - t0).toFixed(0);
       drawBtn.disabled = false; drawBtn.textContent = 'Draw';
       downloadBtn.disabled = false; fullsizeBtn.disabled = false;
@@ -940,6 +984,104 @@ function handleDownload() {
   link.href = src.toDataURL('image/png');
   link.click();
 }
+
+// === MANDELBROT SELECTION ===
+function clientToCanvasPixel(clientX, clientY) {
+  const rect = canvas.getBoundingClientRect();
+  return [
+    (clientX - rect.left) * (canvas.width  / rect.width),
+    (clientY - rect.top)  * (canvas.height / rect.height)
+  ];
+}
+
+function canvasPixelToMath(px, py) {
+  const { xMin, xMax, yMin, yMax } = mbBounds;
+  return [
+    xMin + (px / canvas.width)  * (xMax - xMin),
+    yMax - (py / canvas.height) * (yMax - yMin)
+  ];
+}
+
+function drawSelectionRect(x0, y0, x1, y1) {
+  const ctx2 = selectionCanvas.getContext('2d');
+  ctx2.clearRect(0, 0, selectionCanvas.width, selectionCanvas.height);
+  const sx = Math.min(x0, x1), sy = Math.min(y0, y1);
+  const sw = Math.abs(x1 - x0), sh = Math.abs(y1 - y0);
+  if (sw < 2 || sh < 2) return;
+  ctx2.fillStyle = 'rgba(255,255,255,0.08)';
+  ctx2.fillRect(sx, sy, sw, sh);
+  ctx2.strokeStyle = '#ffffff';
+  ctx2.lineWidth = 1.5;
+  ctx2.setLineDash([5, 3]);
+  ctx2.strokeRect(sx + 0.5, sy + 0.5, sw - 1, sh - 1);
+  ctx2.setLineDash([]);
+}
+
+function confirmSelection(px0, py0, px1, py1) {
+  const sw = Math.abs(px1 - px0), sh = Math.abs(py1 - py0);
+  if (sw < 8 || sh < 8) return;
+  mbHistory.push({ ...mbBounds });
+  undoZoomBtn.disabled = false;
+  const [newXMin, newYMax] = canvasPixelToMath(Math.min(px0, px1), Math.min(py0, py1));
+  const [newXMax, newYMin] = canvasPixelToMath(Math.max(px0, px1), Math.max(py0, py1));
+  mbBounds = { xMin: newXMin, xMax: newXMax, yMin: newYMin, yMax: newYMax };
+  selectionCanvas.getContext('2d').clearRect(0, 0, selectionCanvas.width, selectionCanvas.height);
+  handleDraw();
+}
+
+let selActive = false, selPx0 = 0, selPy0 = 0, selPx1 = 0, selPy1 = 0;
+
+selectionCanvas.addEventListener('mousedown', e => {
+  if (renderMode !== 'mb2d' || isCanvasFullscreen()) return;
+  e.preventDefault(); e.stopPropagation();
+  selActive = true;
+  [selPx0, selPy0] = clientToCanvasPixel(e.clientX, e.clientY);
+  selPx1 = selPx0; selPy1 = selPy0;
+});
+window.addEventListener('mousemove', e => {
+  if (!selActive) return;
+  [selPx1, selPy1] = clientToCanvasPixel(e.clientX, e.clientY);
+  drawSelectionRect(selPx0, selPy0, selPx1, selPy1);
+});
+window.addEventListener('mouseup', e => {
+  if (!selActive) return;
+  selActive = false;
+  [selPx1, selPy1] = clientToCanvasPixel(e.clientX, e.clientY);
+  confirmSelection(selPx0, selPy0, selPx1, selPy1);
+});
+
+let touchSelActive = false;
+selectionCanvas.addEventListener('touchstart', e => {
+  if (renderMode !== 'mb2d' || e.touches.length !== 1 || isCanvasFullscreen()) return;
+  e.preventDefault();
+  touchSelActive = true;
+  [selPx0, selPy0] = clientToCanvasPixel(e.touches[0].clientX, e.touches[0].clientY);
+  selPx1 = selPx0; selPy1 = selPy0;
+}, { passive: false });
+selectionCanvas.addEventListener('touchmove', e => {
+  if (!touchSelActive || e.touches.length !== 1) return;
+  e.preventDefault();
+  [selPx1, selPy1] = clientToCanvasPixel(e.touches[0].clientX, e.touches[0].clientY);
+  drawSelectionRect(selPx0, selPy0, selPx1, selPy1);
+}, { passive: false });
+selectionCanvas.addEventListener('touchend', e => {
+  if (!touchSelActive) return;
+  touchSelActive = false;
+  confirmSelection(selPx0, selPy0, selPx1, selPy1);
+});
+
+undoZoomBtn.addEventListener('click', () => {
+  if (mbHistory.length === 0) return;
+  mbBounds = mbHistory.pop();
+  undoZoomBtn.disabled = mbHistory.length === 0;
+  handleDraw();
+});
+resetZoomBtn.addEventListener('click', () => {
+  mbBounds = { xMin: -2, xMax: 2, yMin: -2, yMax: 2 };
+  mbHistory = [];
+  undoZoomBtn.disabled = true;
+  handleDraw();
+});
 
 // === EVENTS ===
 modeBtn2d.addEventListener('click',   () => { setMode('2d');   handleDraw(); });
