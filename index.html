@@ -210,6 +210,17 @@
     .mb-voyage-btn.voyaging { background: rgba(224,109,109,0.08); color: #e06d6d; border-color: #6e3a3a; }
     .mb-voyage-btn.voyaging:hover { background: rgba(224,109,109,0.18); }
 
+    .mb-infzoom-btn {
+      background: rgba(109,200,224,0.08); color: #6dc8e0;
+      border: 1px solid #3a5e7e; border-radius: 8px;
+      padding: 9px; font-size: 13px; font-weight: 700;
+      cursor: pointer; width: 100%; letter-spacing: 0.3px;
+      transition: background 0.15s, color 0.15s;
+    }
+    .mb-infzoom-btn:hover { background: rgba(109,200,224,0.18); }
+    .mb-infzoom-btn.infzooming { background: rgba(224,109,109,0.08); color: #e06d6d; border-color: #6e3a3a; }
+    .mb-infzoom-btn.infzooming:hover { background: rgba(224,109,109,0.18); }
+
     /* ── Three.js container ── */
     #three-container {
       display: none;
@@ -372,8 +383,9 @@
         <button id="reset-zoom-btn" class="mb-nav-btn">Reset view</button>
       </div>
       <button id="voyage-btn" class="mb-voyage-btn">&#9654; Start Voyage</button>
-      <div class="help-text" style="font-size:10px; margin-top:2px">
-        Drag on the image to zoom into a region
+      <button id="infzoom-btn" class="mb-infzoom-btn">&#8734; Infinite Zoom</button>
+      <div class="help-text" style="font-size:10px; margin-top:4px">
+        Drag: zoom region &nbsp;&middot;&nbsp; Click: set &#8734; target
       </div>
     </div>
 
@@ -822,6 +834,17 @@ let voyageFrom  = null;
 const VOYAGE_RES  = 300;
 const VOYAGE_ITER = 200;
 
+// === INFINITE ZOOM STATE ===
+let infZooming        = false;
+let infZoomRAF        = null;
+let infZoomCx         = null;   // null = no target clicked yet
+let infZoomCy         = null;
+let infZoomStartScale = 2.5;
+let infZoomT0         = 0;
+const INF_ZOOM_RES    = 250;
+const INF_ZOOM_TC     = 3000;   // ms per e-fold (~85 s from scale 2.5 to 1e-12)
+const INF_ZOOM_MIN    = 1e-12;  // stop at floating-point precision limit
+
 const VOYAGE_WAYPOINTS = [
   { label: 'Overview',        cx: -0.5,    cy:  0,      scale: 2.5,   transMs: 1500, holdMs:  800 },
   { label: 'Seahorse Valley', cx: -0.7453, cy:  0.1127, scale: 0.3,   transMs: 3000, holdMs:  500 },
@@ -870,6 +893,7 @@ const selectionCanvas   = document.getElementById('selection-canvas');
 const undoZoomBtn       = document.getElementById('undo-zoom-btn');
 const resetZoomBtn      = document.getElementById('reset-zoom-btn');
 const voyageBtn         = document.getElementById('voyage-btn');
+const infZoomBtn        = document.getElementById('infzoom-btn');
 
 function openControls()  {
   controlsPanel.classList.add('panel-open');
@@ -930,10 +954,11 @@ function setMode(mode) {
     mbBounds = { xMin: -2, xMax: 2, yMin: -2, yMax: 2 };
     mbHistory = [];
     undoZoomBtn.disabled = true;
+    infZoomCx = infZoomCy = null;
   }
 
-  // Voyage is mb2d-only
-  if (mode !== 'mb2d') stopVoyage();
+  // Both animation features are mb2d-only
+  if (mode !== 'mb2d') { stopVoyage(); stopInfZoom(); }
 }
 
 function handleDraw() {
@@ -1075,6 +1100,7 @@ function voyageStep(now) {
 }
 
 function startVoyage() {
+  stopInfZoom();
   voyaging = true;
   voyageBtn.textContent = '■ Stop Voyage';
   voyageBtn.classList.add('voyaging');
@@ -1101,6 +1127,91 @@ function stopVoyage() {
 }
 
 voyageBtn.addEventListener('click', () => voyaging ? stopVoyage() : startVoyage());
+
+// === INFINITE ZOOM ===
+function drawTargetMarker(px, py) {
+  const ctx2 = selectionCanvas.getContext('2d');
+  ctx2.clearRect(0, 0, selectionCanvas.width, selectionCanvas.height);
+  const sz = Math.max(10, selectionCanvas.width / 25);
+  ctx2.strokeStyle = '#ffff00';
+  ctx2.lineWidth = 1.5;
+  ctx2.setLineDash([]);
+  ctx2.beginPath();
+  ctx2.moveTo(px - sz, py); ctx2.lineTo(px + sz, py);
+  ctx2.moveTo(px, py - sz); ctx2.lineTo(px, py + sz);
+  ctx2.stroke();
+  ctx2.beginPath();
+  ctx2.arc(px, py, sz * 0.5, 0, Math.PI * 2);
+  ctx2.stroke();
+}
+
+function setInfZoomTarget(px, py) {
+  const [cx, cy] = canvasPixelToMath(px, py);
+  infZoomCx = cx; infZoomCy = cy;
+  infZoomStartScale = (mbBounds.xMax - mbBounds.xMin) / 2;
+  drawTargetMarker(px, py);
+  statusBar.textContent =
+    `Zoom target: (${cx.toFixed(6)}, ${cy.toFixed(6)}) — click ∞ Infinite Zoom to start`;
+}
+
+function infZoomStep(now) {
+  if (!infZooming) return;
+  const elapsed = now - infZoomT0;
+  const scale   = infZoomStartScale * Math.exp(-elapsed / INF_ZOOM_TC);
+
+  if (scale < INF_ZOOM_MIN) {
+    stopInfZoom(true);  // freeze last frame
+    return;
+  }
+
+  mbBounds = { xMin: infZoomCx - scale, xMax: infZoomCx + scale,
+               yMin: infZoomCy - scale, yMax: infZoomCy + scale };
+
+  const maxIter = Math.min(600, Math.max(100,
+    Math.round(200 + 60 * Math.log10(infZoomStartScale / scale))));
+
+  if (canvas.width !== INF_ZOOM_RES) { canvas.width = canvas.height = INF_ZOOM_RES; }
+  renderMandelbrot2D(canvas, colormapSel.value,
+    mbBounds.xMin, mbBounds.xMax, mbBounds.yMin, mbBounds.yMax, maxIter);
+
+  statusBar.textContent =
+    `Infinite Zoom: ×${(infZoomStartScale / scale).toExponential(1)} · ${maxIter} iter`;
+
+  infZoomRAF = requestAnimationFrame(infZoomStep);
+}
+
+function startInfZoom() {
+  stopVoyage();
+  if (infZoomCx === null) {
+    infZoomCx = (mbBounds.xMin + mbBounds.xMax) / 2;
+    infZoomCy = (mbBounds.yMin + mbBounds.yMax) / 2;
+    infZoomStartScale = (mbBounds.xMax - mbBounds.xMin) / 2;
+  }
+  infZooming = true;
+  infZoomBtn.textContent = '■ Stop';
+  infZoomBtn.classList.add('infzooming');
+  selectionCanvas.style.pointerEvents = 'none';
+  drawBtn.disabled = undoZoomBtn.disabled =
+    resetZoomBtn.disabled = voyageBtn.disabled = true;
+  infZoomT0  = performance.now();
+  infZoomRAF = requestAnimationFrame(infZoomStep);
+}
+
+function stopInfZoom(freeze = false) {
+  if (!infZooming) return;
+  cancelAnimationFrame(infZoomRAF);
+  infZoomRAF = null; infZooming = false;
+  infZoomBtn.textContent = '∞ Infinite Zoom';
+  infZoomBtn.classList.remove('infzooming');
+  selectionCanvas.style.pointerEvents = '';
+  drawBtn.disabled      = false;
+  resetZoomBtn.disabled = false;
+  voyageBtn.disabled    = false;
+  undoZoomBtn.disabled  = mbHistory.length === 0;
+  if (!freeze) handleDraw();
+}
+
+infZoomBtn.addEventListener('click', () => infZooming ? stopInfZoom() : startInfZoom());
 
 // === MANDELBROT SELECTION ===
 
@@ -1179,10 +1290,13 @@ window.addEventListener('mouseup', e => {
   if (!selActive) return;
   selActive = false;
   selCx1 = e.clientX; selCy1 = e.clientY;
-  confirmSelection(
-    ...clientToCanvasPixel(selCx0, selCy0),
-    ...clientToCanvasPixel(selCx1, selCy1)
-  );
+  const [px0, py0] = clientToCanvasPixel(selCx0, selCy0);
+  const [px1, py1] = clientToCanvasPixel(selCx1, selCy1);
+  if (Math.abs(px1 - px0) < 8 && Math.abs(py1 - py0) < 8) {
+    setInfZoomTarget((px0 + px1) / 2, (py0 + py1) / 2);
+  } else {
+    confirmSelection(px0, py0, px1, py1);
+  }
 });
 
 let touchSelActive = false;
@@ -1202,10 +1316,13 @@ selectionCanvas.addEventListener('touchmove', e => {
 selectionCanvas.addEventListener('touchend', e => {
   if (!touchSelActive) return;
   touchSelActive = false;
-  confirmSelection(
-    ...clientToCanvasPixel(selCx0, selCy0),
-    ...clientToCanvasPixel(selCx1, selCy1)
-  );
+  const [px0, py0] = clientToCanvasPixel(selCx0, selCy0);
+  const [px1, py1] = clientToCanvasPixel(selCx1, selCy1);
+  if (Math.abs(px1 - px0) < 8 && Math.abs(py1 - py0) < 8) {
+    setInfZoomTarget((px0 + px1) / 2, (py0 + py1) / 2);
+  } else {
+    confirmSelection(px0, py0, px1, py1);
+  }
 });
 
 undoZoomBtn.addEventListener('click', () => {
