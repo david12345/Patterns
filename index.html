@@ -60,19 +60,22 @@
 
     /* ── Mode toggle ── */
     .mode-toggle {
-      display: flex;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1px;
+      background: #3a3a5e;
       border: 1px solid #3a3a5e;
       border-radius: 8px;
       overflow: hidden;
     }
     .mode-btn {
-      flex: 1; padding: 8px 6px; border: none;
-      background: transparent; color: #7c7c9e;
-      cursor: pointer; font-size: 13px; font-weight: 600;
+      padding: 8px 6px; border: none;
+      background: #1a1a2e; color: #7c7c9e;
+      cursor: pointer; font-size: 12px; font-weight: 600;
       transition: background 0.15s, color 0.15s;
     }
     .mode-btn.active { background: #c3a6ff; color: #0f0e17; }
-    .mode-btn:hover:not(.active) { background: rgba(195,166,255,0.1); color: #c3a6ff; }
+    .mode-btn:hover:not(.active) { background: rgba(195,166,255,0.12); color: #c3a6ff; }
 
     .expr-row {
       display: flex; align-items: center; gap: 6px;
@@ -290,16 +293,48 @@
     <div class="control-group">
       <label>Render mode</label>
       <div class="mode-toggle">
-        <button id="mode-2d" class="mode-btn active">2D Flat</button>
-        <button id="mode-3d" class="mode-btn">3D Surface</button>
+        <button id="mode-2d"   class="mode-btn active">Formula 2D</button>
+        <button id="mode-3d"   class="mode-btn">Formula 3D</button>
+        <button id="mode-mb2d" class="mode-btn">Mandelbrot 2D</button>
+        <button id="mode-mb3d" class="mode-btn">Mandelbrot 3D</button>
       </div>
     </div>
 
-    <div class="control-group">
-      <label>Function f(x, y)</label>
-      <div class="expr-row">
-        <span class="expr-prefix">z =</span>
-        <input type="text" id="expr-input" placeholder="sin(x) * cos(y)" autocomplete="off" spellcheck="false">
+    <!-- Formula-specific controls -->
+    <div id="formula-section">
+      <div class="control-group">
+        <label>Function f(x, y)</label>
+        <div class="expr-row">
+          <span class="expr-prefix">z =</span>
+          <input type="text" id="expr-input" placeholder="sin(x) * cos(y)" autocomplete="off" spellcheck="false">
+        </div>
+      </div>
+      <div class="control-group">
+        <label>Preset examples</label>
+        <select id="preset-select">
+          <option value="">— choose a preset —</option>
+          <option value="sin(x) * cos(y)">sin(x) · cos(y)</option>
+          <option value="sin(sqrt(x*x + y*y))">Ripple: sin(√(x²+y²))</option>
+          <option value="sin(x*x + y*y)">Circular waves: sin(x²+y²)</option>
+          <option value="(x*x - y*y) / (PI*PI)">Saddle surface</option>
+          <option value="abs(sin(x) + cos(y))">Grid interference</option>
+          <option value="sin(5*x) * cos(5*y)">High-freq grid</option>
+          <option value="atan2(y, x) / PI">Angle map</option>
+          <option value="(floor(x) + floor(y)) % 2">Checkerboard</option>
+          <option value="sin(x*y)">sin(x·y)</option>
+          <option value="cos(x) + sin(y) - sin(x*y)">Interference mix</option>
+          <option value="sin(x*x - y*y)">Hyperbolic waves</option>
+          <option value="abs(sin(3*atan2(y,x)) * sqrt(x*x+y*y))">Star ripple</option>
+          <option value="sin(x*x + y*y) * atan(x*x + y*y)">Spiral decay</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Mandelbrot-specific controls -->
+    <div id="mandelbrot-section" style="display:none">
+      <div class="control-group">
+        <label>Max iterations</label>
+        <input type="number" id="max-iter" value="256" min="10" max="10000" step="64">
       </div>
     </div>
 
@@ -308,26 +343,6 @@
     <button id="fullsize-btn" disabled>View Full Size</button>
 
     <div id="error-msg"></div>
-
-    <div class="control-group">
-      <label>Preset examples</label>
-      <select id="preset-select">
-        <option value="">— choose a preset —</option>
-        <option value="sin(x) * cos(y)">sin(x) · cos(y)</option>
-        <option value="sin(sqrt(x*x + y*y))">Ripple: sin(√(x²+y²))</option>
-        <option value="sin(x*x + y*y)">Circular waves: sin(x²+y²)</option>
-        <option value="(x*x - y*y) / (PI*PI)">Saddle surface</option>
-        <option value="abs(sin(x) + cos(y))">Grid interference</option>
-        <option value="sin(5*x) * cos(5*y)">High-freq grid</option>
-        <option value="atan2(y, x) / PI">Angle map</option>
-        <option value="(floor(x) + floor(y)) % 2">Checkerboard</option>
-        <option value="sin(x*y)">sin(x·y)</option>
-        <option value="cos(x) + sin(y) - sin(x*y)">Interference mix</option>
-        <option value="sin(x*x - y*y)">Hyperbolic waves</option>
-        <option value="abs(sin(3*atan2(y,x)) * sqrt(x*x+y*y))">Star ripple</option>
-        <option value="sin(x*x + y*y) * atan(x*x + y*y)">Spiral decay</option>
-      </select>
-    </div>
 
     <hr class="divider">
 
@@ -365,9 +380,8 @@
     <hr class="divider">
 
     <div class="help-text">
-      Available: <code>sin cos tan asin acos atan atan2 abs sqrt pow log log2 floor ceil round min max sign sinh cosh tanh PI E</code><br><br>
-      Use <code>**</code> or <code>^</code> for powers.<br>
-      Coordinates span the range above; positive y is up.<br><br>
+      <span id="help-formula">Available: <code>sin cos tan asin acos atan atan2 abs sqrt pow log log2 floor ceil round min max sign sinh cosh tanh PI E</code><br>Use <code>**</code> or <code>^</code> for powers.<br>Coordinates span the range above; positive y is up.<br><br></span>
+      <span id="help-mandelbrot" style="display:none">Iterates z = z² + c. Interior pixels (inside the set) are rendered black. The range sets the complex-plane window.<br><br></span>
       <strong style="color:#7c7c9e">3D:</strong> drag to rotate · scroll to zoom · right-drag to pan
     </div>
 
@@ -622,8 +636,139 @@ function render3D(fn, colormapName, xMin, xMax, yMin, yMax) {
   return { zMin, zMax, segs };
 }
 
+// === MANDELBROT ===
+function mandelbrotValue(cx, cy, maxIter) {
+  let zx = 0, zy = 0;
+  for (let i = 0; i < maxIter; i++) {
+    const zx2 = zx * zx, zy2 = zy * zy;
+    if (zx2 + zy2 > 4) {
+      // Smooth (continuous) iteration count — removes banding
+      const log_zn = Math.log(zx2 + zy2) * 0.5;
+      const nu = Math.log(log_zn / Math.LN2) / Math.LN2;
+      return i + 1 - nu;
+    }
+    zy = 2 * zx * zy + cy;
+    zx = zx2 - zy2 + cx;
+  }
+  return 0; // inside the set
+}
+
+function renderMandelbrot2D(canvas, colormapName, xMin, xMax, yMin, yMax, maxIter) {
+  const W = canvas.width, H = canvas.height;
+  const ctx = canvas.getContext('2d');
+  const vals = new Float64Array(W * H);
+  let vMin = Infinity, vMax = -Infinity;
+
+  for (let py = 0; py < H; py++) {
+    for (let px = 0; px < W; px++) {
+      const cx = xMin + (px / (W - 1)) * (xMax - xMin);
+      const cy = yMax - (py / (H - 1)) * (yMax - yMin);
+      const v  = mandelbrotValue(cx, cy, maxIter);
+      vals[py * W + px] = v;
+      if (v > 0) { if (v < vMin) vMin = v; if (v > vMax) vMax = v; }
+    }
+  }
+
+  const vRange   = vMax - vMin;
+  const normalize = vRange < 1e-12 ? () => 0.5 : v => (v - vMin) / vRange;
+  const imageData = ctx.createImageData(W, H);
+  const data = imageData.data;
+  const colorfn = COLORMAPS[colormapName];
+
+  for (let i = 0; i < W * H; i++) {
+    const v = vals[i], base = i * 4;
+    if (v === 0) {
+      data[base] = 0; data[base+1] = 0; data[base+2] = 0; data[base+3] = 255;
+    } else {
+      const [r,g,b] = colorfn(normalize(v));
+      data[base]=r; data[base+1]=g; data[base+2]=b; data[base+3]=255;
+    }
+  }
+  ctx.putImageData(imageData, 0, 0);
+
+  lastZValues = vals;
+  lastRenderParams = { W, H, xMin, xMax, yMin, yMax };
+  return { zMin: vMin, zMax: vMax };
+}
+
+function renderMandelbrot3D(colormapName, xMin, xMax, yMin, yMax, maxIter) {
+  const container = document.getElementById('three-container');
+  initThree(container);
+
+  if (surfaceMesh) {
+    threeScene.remove(surfaceMesh);
+    surfaceMesh.geometry.dispose();
+    surfaceMesh.material.dispose();
+    surfaceMesh = null;
+  }
+
+  const res = parseInt(resSel.value, 10);
+  const segs = res, verts = segs + 1;
+  const geometry = new THREE.PlaneGeometry(1, 1, segs, segs);
+  const positions = geometry.attributes.position;
+
+  // Phase 1: compute values
+  const vals = new Float32Array(verts * verts);
+  let vMin = Infinity, vMax = -Infinity;
+  for (let iy = 0; iy < verts; iy++) {
+    for (let ix = 0; ix < verts; ix++) {
+      const i  = iy * verts + ix;
+      const cx = xMin + (ix / segs) * (xMax - xMin);
+      const cy = yMax - (iy / segs) * (yMax - yMin);
+      const v  = mandelbrotValue(cx, cy, maxIter);
+      vals[i] = v;
+      if (v > 0) { if (v < vMin) vMin = v; if (v > vMax) vMax = v; }
+    }
+  }
+
+  const vRange     = vMax - vMin;
+  const normalizeV  = vRange < 1e-12 ? () => 0.5 : v => (v - vMin) / vRange;
+  const xySpan      = Math.max(xMax - xMin, yMax - yMin);
+  const heightScale = xySpan * 0.35;
+
+  // Phase 2: positions + colours — inside pixels sink to the bottom
+  const colors  = new Float32Array(verts * verts * 3);
+  const colorfn = COLORMAPS[colormapName];
+
+  for (let iy = 0; iy < verts; iy++) {
+    for (let ix = 0; ix < verts; ix++) {
+      const i    = iy * verts + ix;
+      const cx   = xMin + (ix / segs) * (xMax - xMin);
+      const cy   = yMax - (iy / segs) * (yMax - yMin);
+      const v    = vals[i];
+      const inside = v === 0;
+      const t    = inside ? 0 : normalizeV(v);
+      const z3   = inside ? -heightScale * 0.5 : (t - 0.5) * heightScale;
+
+      positions.setXYZ(i, cx, cy, z3);
+      if (inside) {
+        colors[i*3]=0; colors[i*3+1]=0; colors[i*3+2]=0;
+      } else {
+        const [r,g,b] = colorfn(t);
+        colors[i*3]=r/255; colors[i*3+1]=g/255; colors[i*3+2]=b/255;
+      }
+    }
+  }
+
+  positions.needsUpdate = true;
+  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  geometry.computeVertexNormals();
+  surfaceMesh = new THREE.Mesh(geometry, new THREE.MeshPhongMaterial({
+    vertexColors: true, side: THREE.DoubleSide, shininess: 40
+  }));
+  threeScene.add(surfaceMesh);
+
+  const cx2 = (xMin + xMax) / 2, cy2 = (yMin + yMax) / 2;
+  threeControls.target.set(cx2, cy2, 0);
+  threeCamera.position.set(cx2, cy2 - xySpan * 0.9, xySpan * 0.55);
+  threeControls.update();
+
+  return { zMin: vMin, zMax: vMax };
+}
+
 // === RENDER MODE ===
 let renderMode = '2d';
+let savedFormulaRange = null; // saved when switching to Mandelbrot
 
 // === DOM REFS ===
 const canvas         = document.getElementById('pattern-canvas');
@@ -641,9 +786,16 @@ const resSel         = document.getElementById('res-select');
 const errorMsg       = document.getElementById('error-msg');
 const hoverInfo      = document.getElementById('hover-info');
 const statusBar      = document.getElementById('status-bar');
-const modeBtn2d        = document.getElementById('mode-2d');
-const modeBtn3d        = document.getElementById('mode-3d');
-const controlsPanel    = document.getElementById('controls');
+const modeBtn2d         = document.getElementById('mode-2d');
+const modeBtn3d         = document.getElementById('mode-3d');
+const modeBtnMb2d       = document.getElementById('mode-mb2d');
+const modeBtnMb3d       = document.getElementById('mode-mb3d');
+const formulaSection    = document.getElementById('formula-section');
+const mandelbrotSection = document.getElementById('mandelbrot-section');
+const maxIterEl         = document.getElementById('max-iter');
+const helpFormula       = document.getElementById('help-formula');
+const helpMandelbrot    = document.getElementById('help-mandelbrot');
+const controlsPanel     = document.getElementById('controls');
 const controlsToggleEl = document.getElementById('controls-toggle');
 const controlsBackdrop = document.getElementById('controls-backdrop');
 
@@ -671,40 +823,57 @@ function getRange() {
   return [mn, mx];
 }
 
+const ALL_MODE_BTNS = [modeBtn2d, modeBtn3d, modeBtnMb2d, modeBtnMb3d];
 function setMode(mode) {
+  const wasMandelbrot = renderMode === 'mb2d' || renderMode === 'mb3d';
+  const isMandelbrot  = mode === 'mb2d' || mode === 'mb3d';
   renderMode = mode;
-  if (mode === '2d') {
-    canvasWrapper.style.display  = '';
-    threeContainer.style.display = 'none';
-    modeBtn2d.classList.add('active');
-    modeBtn3d.classList.remove('active');
-  } else {
-    canvasWrapper.style.display  = 'none';
-    threeContainer.style.display = 'block';
-    modeBtn2d.classList.remove('active');
-    modeBtn3d.classList.add('active');
+
+  // Save / restore coordinate range when toggling between formula and Mandelbrot
+  if (!wasMandelbrot && isMandelbrot) {
+    savedFormulaRange = [rangeMinEl.value, rangeMaxEl.value];
+    rangeMinEl.value = '-2'; rangeMaxEl.value = '2';
+  } else if (wasMandelbrot && !isMandelbrot && savedFormulaRange) {
+    [rangeMinEl.value, rangeMaxEl.value] = savedFormulaRange;
   }
+
+  const uses3D = mode === '3d' || mode === 'mb3d';
+  canvasWrapper.style.display  = uses3D ? 'none' : '';
+  threeContainer.style.display = uses3D ? 'block' : 'none';
+
+  formulaSection.style.display    = isMandelbrot ? 'none' : '';
+  mandelbrotSection.style.display = isMandelbrot ? '' : 'none';
+  helpFormula.style.display       = isMandelbrot ? 'none' : '';
+  helpMandelbrot.style.display    = isMandelbrot ? '' : 'none';
+
+  ALL_MODE_BTNS.forEach(b => b.classList.remove('active'));
+  const btnMap = { '2d': modeBtn2d, '3d': modeBtn3d, 'mb2d': modeBtnMb2d, 'mb3d': modeBtnMb3d };
+  btnMap[mode].classList.add('active');
 }
 
 function handleDraw() {
   clearError();
-  const expr = exprInput.value.trim();
-  if (!expr) { showError('Please enter a function.'); return; }
-
+  const colormap = colormapSel.value;
   const range = getRange();
   if (!range) return;
   const [rMin, rMax] = range;
+  const res = parseInt(resSel.value, 10);
 
-  const { fn, error } = compileExpression(expr);
-  if (error) { showError('Error: ' + error); return; }
+  // Formula modes need a valid expression
+  let fn = null;
+  if (renderMode === '2d' || renderMode === '3d') {
+    const expr = exprInput.value.trim();
+    if (!expr) { showError('Please enter a function.'); return; }
+    const compiled = compileExpression(expr);
+    if (compiled.error) { showError('Error: ' + compiled.error); return; }
+    fn = compiled.fn;
+  }
 
-  const colormap = colormapSel.value;
   closeControls();
   drawBtn.disabled = true;
   drawBtn.textContent = 'Drawing…';
 
   if (renderMode === '2d') {
-    const res = parseInt(resSel.value, 10);
     canvas.width = res; canvas.height = res;
     statusBar.textContent = `rendering ${res}×${res}…`;
     setTimeout(() => {
@@ -716,8 +885,7 @@ function handleDraw() {
       statusBar.textContent = `${res}×${res} · ${ms} ms · z ∈ [${zMin.toFixed(4)}, ${zMax.toFixed(4)}]`;
     }, 0);
 
-  } else {
-    const res  = parseInt(resSel.value, 10);
+  } else if (renderMode === '3d') {
     statusBar.textContent = `rendering 3D surface (${res}×${res} grid)…`;
     setTimeout(() => {
       const t0 = performance.now();
@@ -727,14 +895,40 @@ function handleDraw() {
       downloadBtn.disabled = false; fullsizeBtn.disabled = false;
       statusBar.textContent = `3D ${res}×${res} grid · ${ms} ms · z ∈ [${zMin.toFixed(4)}, ${zMax.toFixed(4)}]`;
     }, 0);
+
+  } else if (renderMode === 'mb2d') {
+    const maxIter = Math.max(10, parseInt(maxIterEl.value, 10) || 256);
+    canvas.width = res; canvas.height = res;
+    statusBar.textContent = `rendering Mandelbrot ${res}×${res} · ${maxIter} iter…`;
+    setTimeout(() => {
+      const t0 = performance.now();
+      const { zMin, zMax } = renderMandelbrot2D(canvas, colormap, rMin, rMax, rMin, rMax, maxIter);
+      const ms = (performance.now() - t0).toFixed(0);
+      drawBtn.disabled = false; drawBtn.textContent = 'Draw';
+      downloadBtn.disabled = false; fullsizeBtn.disabled = false;
+      statusBar.textContent = `Mandelbrot ${res}×${res} · ${ms} ms · escape ∈ [${zMin.toFixed(2)}, ${zMax.toFixed(2)}]`;
+    }, 0);
+
+  } else if (renderMode === 'mb3d') {
+    const maxIter = Math.max(10, parseInt(maxIterEl.value, 10) || 256);
+    statusBar.textContent = `rendering Mandelbrot 3D (${res}×${res} grid · ${maxIter} iter)…`;
+    setTimeout(() => {
+      const t0 = performance.now();
+      const { zMin, zMax } = renderMandelbrot3D(colormap, rMin, rMax, rMin, rMax, maxIter);
+      const ms = (performance.now() - t0).toFixed(0);
+      drawBtn.disabled = false; drawBtn.textContent = 'Draw';
+      downloadBtn.disabled = false; fullsizeBtn.disabled = false;
+      statusBar.textContent = `Mandelbrot 3D ${res}×${res} · ${ms} ms · escape ∈ [${zMin.toFixed(2)}, ${zMax.toFixed(2)}]`;
+    }, 0);
   }
 }
 
 function handleDownload() {
-  const expr = exprInput.value.trim() || 'pattern';
-  const slug = expr.replace(/[^a-zA-Z0-9+\-]/g, '_').replace(/_+/g, '_').slice(0, 40);
+  const isMandelbrot = renderMode === 'mb2d' || renderMode === 'mb3d';
+  const base = isMandelbrot ? 'mandelbrot' : (exprInput.value.trim() || 'pattern');
+  const slug = base.replace(/[^a-zA-Z0-9+\-]/g, '_').replace(/_+/g, '_').slice(0, 40);
   let src, suffix;
-  if (renderMode === '3d' && threeRenderer) {
+  if ((renderMode === '3d' || renderMode === 'mb3d') && threeRenderer) {
     src    = threeRenderer.domElement;
     suffix = `3d_${src.width}x${src.height}`;
   } else {
@@ -748,10 +942,12 @@ function handleDownload() {
 }
 
 // === EVENTS ===
-modeBtn2d.addEventListener('click', () => { setMode('2d'); handleDraw(); });
-modeBtn3d.addEventListener('click', () => { setMode('3d'); handleDraw(); });
+modeBtn2d.addEventListener('click',   () => { setMode('2d');   handleDraw(); });
+modeBtn3d.addEventListener('click',   () => { setMode('3d');   handleDraw(); });
+modeBtnMb2d.addEventListener('click', () => { setMode('mb2d'); handleDraw(); });
+modeBtnMb3d.addEventListener('click', () => { setMode('mb3d'); handleDraw(); });
 function handleFullSize() {
-  const target = renderMode === '3d' ? threeContainer : canvasWrapper;
+  const target = (renderMode === '3d' || renderMode === 'mb3d') ? threeContainer : canvasWrapper;
   const requestFS = target.requestFullscreen ?? target.webkitRequestFullscreen;
   if (requestFS) {
     requestFS.call(target);
