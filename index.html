@@ -189,6 +189,20 @@
 
     #status-bar { font-size: 11px; color: #5a5a7e; font-family: monospace; }
 
+    /* ── Controls toggle (mobile only) ── */
+    #controls-toggle {
+      display: none;
+      margin-left: auto;
+      background: transparent;
+      border: 1px solid #3a3a5e;
+      border-radius: 8px;
+      color: #c3a6ff;
+      padding: 6px 14px;
+      font-size: 18px;
+      line-height: 1;
+      cursor: pointer;
+    }
+
     /* ── Fullscreen styles ── */
     #canvas-wrapper:fullscreen,
     #canvas-wrapper:-webkit-full-screen {
@@ -196,6 +210,7 @@
       display: flex; align-items: center; justify-content: center;
       width: 100vw; height: 100vh;
       overflow: hidden;
+      touch-action: none;
     }
     #canvas-wrapper:fullscreen #pattern-canvas,
     #canvas-wrapper:-webkit-full-screen #pattern-canvas {
@@ -214,9 +229,49 @@
     }
 
     @media (max-width: 700px) {
-      #app { flex-direction: column; }
-      #controls { width: 100%; min-width: unset; border-right: none; border-bottom: 1px solid #2d2d4e; }
-      #three-container { width: 100%; max-width: 100%; height: 70vw; min-height: 300px; }
+      #controls-toggle { display: block; }
+
+      #app { flex-direction: column; overflow: visible; }
+
+      #canvas-area { padding: 8px; }
+
+      #controls {
+        position: fixed;
+        inset: auto 0 0 0;
+        width: 100%; min-width: unset;
+        max-height: 82dvh;
+        border-right: none;
+        border-top: 1px solid #2d2d4e;
+        border-radius: 16px 16px 0 0;
+        padding-top: 20px;
+        padding-bottom: max(16px, env(safe-area-inset-bottom));
+        transform: translateY(100%);
+        transition: transform 0.32s cubic-bezier(0.4, 0, 0.2, 1);
+        z-index: 200;
+      }
+      #controls::before {
+        content: '';
+        position: absolute; top: 8px; left: 50%;
+        transform: translateX(-50%);
+        width: 36px; height: 4px;
+        background: #3a3a5e; border-radius: 2px;
+      }
+      #controls.panel-open { transform: translateY(0); }
+
+      #controls-backdrop {
+        display: none;
+        position: fixed; inset: 0;
+        background: rgba(0,0,0,0.55);
+        z-index: 199;
+      }
+      #controls-backdrop.panel-open { display: block; }
+
+      #three-container { width: 100%; max-width: 100%; height: 72vw; min-height: 280px; }
+
+      /* Larger tap targets on mobile */
+      select, input[type="number"] { padding: 10px 8px; font-size: 15px; }
+      #draw-btn, #download-btn, #fullsize-btn { padding: 13px; font-size: 15px; }
+      .mode-btn { padding: 11px 6px; font-size: 14px; }
     }
   </style>
 </head>
@@ -225,8 +280,10 @@
 <header>
   <h1>2D Pattern Explorer</h1>
   <span class="subtitle">z = f(x, y) → colour</span>
+  <button id="controls-toggle" aria-label="Open controls">☰</button>
 </header>
 
+<div id="controls-backdrop"></div>
 <div id="app">
   <div id="controls">
 
@@ -584,8 +641,24 @@ const resSel         = document.getElementById('res-select');
 const errorMsg       = document.getElementById('error-msg');
 const hoverInfo      = document.getElementById('hover-info');
 const statusBar      = document.getElementById('status-bar');
-const modeBtn2d      = document.getElementById('mode-2d');
-const modeBtn3d      = document.getElementById('mode-3d');
+const modeBtn2d        = document.getElementById('mode-2d');
+const modeBtn3d        = document.getElementById('mode-3d');
+const controlsPanel    = document.getElementById('controls');
+const controlsToggleEl = document.getElementById('controls-toggle');
+const controlsBackdrop = document.getElementById('controls-backdrop');
+
+function openControls()  {
+  controlsPanel.classList.add('panel-open');
+  controlsBackdrop.classList.add('panel-open');
+}
+function closeControls() {
+  controlsPanel.classList.remove('panel-open');
+  controlsBackdrop.classList.remove('panel-open');
+}
+controlsToggleEl.addEventListener('click', () =>
+  controlsPanel.classList.contains('panel-open') ? closeControls() : openControls()
+);
+controlsBackdrop.addEventListener('click', closeControls);
 
 function showError(msg) { errorMsg.textContent = msg; errorMsg.style.display = 'block'; }
 function clearError()   { errorMsg.style.display = 'none'; }
@@ -626,6 +699,7 @@ function handleDraw() {
   if (error) { showError('Error: ' + error); return; }
 
   const colormap = colormapSel.value;
+  closeControls();
   drawBtn.disabled = true;
   drawBtn.textContent = 'Drawing…';
 
@@ -679,7 +753,15 @@ modeBtn2d.addEventListener('click', () => { setMode('2d'); handleDraw(); });
 modeBtn3d.addEventListener('click', () => { setMode('3d'); handleDraw(); });
 function handleFullSize() {
   const target = renderMode === '3d' ? threeContainer : canvasWrapper;
-  (target.requestFullscreen || target.webkitRequestFullscreen).call(target);
+  const requestFS = target.requestFullscreen ?? target.webkitRequestFullscreen;
+  if (requestFS) {
+    requestFS.call(target);
+  } else if (renderMode === '2d') {
+    // iOS Safari fallback: open image in a new tab
+    const w = window.open('');
+    w.document.write(`<!doctype html><body style="margin:0;background:#000;display:flex;align-items:center;justify-content:center;min-height:100vh"><img src="${canvas.toDataURL()}" style="max-width:100%;max-height:100vh"></body>`);
+    w.document.close();
+  }
 }
 
 // === 2D FULLSCREEN ZOOM ===
@@ -747,8 +829,56 @@ canvasWrapper.addEventListener('dblclick', () => {
   resetZoom();
 });
 
-document.addEventListener('fullscreenchange',     () => { if (!isCanvasFullscreen()) resetZoom(); });
+document.addEventListener('fullscreenchange',      () => { if (!isCanvasFullscreen()) resetZoom(); });
 document.addEventListener('webkitfullscreenchange', () => { if (!isCanvasFullscreen()) resetZoom(); });
+
+// Touch pinch-to-zoom + single-finger pan (2D fullscreen)
+let lastTouchDist = 0;
+
+canvasWrapper.addEventListener('touchstart', e => {
+  if (!isCanvasFullscreen()) return;
+  e.preventDefault();
+  if (e.touches.length === 2) {
+    lastTouchDist = Math.hypot(
+      e.touches[1].clientX - e.touches[0].clientX,
+      e.touches[1].clientY - e.touches[0].clientY
+    );
+  } else if (e.touches.length === 1 && zoom > 1) {
+    dragging = true;
+    dragX = e.touches[0].clientX - panX;
+    dragY = e.touches[0].clientY - panY;
+  }
+}, { passive: false });
+
+canvasWrapper.addEventListener('touchmove', e => {
+  if (!isCanvasFullscreen()) return;
+  e.preventDefault();
+  if (e.touches.length === 2) {
+    const dist = Math.hypot(
+      e.touches[1].clientX - e.touches[0].clientX,
+      e.touches[1].clientY - e.touches[0].clientY
+    );
+    if (!lastTouchDist) { lastTouchDist = dist; return; }
+    const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+    const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+    const rect  = canvasWrapper.getBoundingClientRect();
+    const newZoom = Math.max(1, Math.min(20, zoom * (dist / lastTouchDist)));
+    panX = (midX - rect.left) - ((midX - rect.left) - panX) * (newZoom / zoom);
+    panY = (midY - rect.top)  - ((midY - rect.top)  - panY) * (newZoom / zoom);
+    zoom = newZoom;
+    lastTouchDist = dist;
+    applyZoomTransform();
+  } else if (e.touches.length === 1 && dragging) {
+    panX = e.touches[0].clientX - dragX;
+    panY = e.touches[0].clientY - dragY;
+    applyZoomTransform();
+  }
+}, { passive: false });
+
+canvasWrapper.addEventListener('touchend', e => {
+  if (e.touches.length < 2) lastTouchDist = 0;
+  if (e.touches.length === 0) { dragging = false; applyZoomTransform(); }
+});
 
 drawBtn.addEventListener('click', handleDraw);
 downloadBtn.addEventListener('click', handleDownload);
