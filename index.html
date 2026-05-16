@@ -124,6 +124,16 @@
     #download-btn:hover:not(:disabled) { background: rgba(195,166,255,0.12); }
     #download-btn:disabled { border-color: #3a3a5e; color: #4a4a6e; cursor: not-allowed; }
 
+    #fullsize-btn {
+      background: transparent; color: #7c9ec3;
+      border: 1px solid #7c9ec3; border-radius: 8px;
+      padding: 8px; font-size: 13px; font-weight: 600;
+      cursor: pointer; width: 100%; letter-spacing: 0.5px;
+      transition: background 0.15s, color 0.15s;
+    }
+    #fullsize-btn:hover:not(:disabled) { background: rgba(124,158,195,0.12); }
+    #fullsize-btn:disabled { border-color: #3a3a5e; color: #4a4a6e; cursor: not-allowed; }
+
     #error-msg {
       background: #2e1a1a; border: 1px solid #8b3a3a; border-radius: 6px;
       color: #ff8080; padding: 8px 10px; font-size: 12px;
@@ -179,6 +189,27 @@
 
     #status-bar { font-size: 11px; color: #5a5a7e; font-family: monospace; }
 
+    /* ── Fullscreen styles ── */
+    #canvas-wrapper:fullscreen,
+    #canvas-wrapper:-webkit-full-screen {
+      background: #000;
+      display: flex; align-items: center; justify-content: center;
+      width: 100vw; height: 100vh;
+    }
+    #canvas-wrapper:fullscreen #pattern-canvas,
+    #canvas-wrapper:-webkit-full-screen #pattern-canvas {
+      max-width: 100vw; max-height: 100vh;
+      width: auto; height: auto;
+    }
+    #canvas-wrapper:fullscreen #hover-info,
+    #canvas-wrapper:-webkit-full-screen #hover-info { opacity: 1; }
+
+    #three-container:fullscreen,
+    #three-container:-webkit-full-screen {
+      width: 100vw !important; height: 100vh !important;
+      max-width: none !important; max-height: none !important;
+    }
+
     @media (max-width: 700px) {
       #app { flex-direction: column; }
       #controls { width: 100%; min-width: unset; border-right: none; border-bottom: 1px solid #2d2d4e; }
@@ -214,6 +245,7 @@
 
     <button id="draw-btn">Draw</button>
     <button id="download-btn" disabled>Download PNG</button>
+    <button id="fullsize-btn" disabled>View Full Size</button>
 
     <div id="error-msg"></div>
 
@@ -540,6 +572,7 @@ const threeContainer = document.getElementById('three-container');
 const exprInput      = document.getElementById('expr-input');
 const drawBtn        = document.getElementById('draw-btn');
 const downloadBtn    = document.getElementById('download-btn');
+const fullsizeBtn    = document.getElementById('fullsize-btn');
 const presetSelect   = document.getElementById('preset-select');
 const colormapSel    = document.getElementById('colormap-select');
 const rangeMinEl     = document.getElementById('range-min');
@@ -602,7 +635,7 @@ function handleDraw() {
       const { zMin, zMax } = render2D(canvas, fn, colormap, rMin, rMax, rMin, rMax);
       const ms = (performance.now() - t0).toFixed(0);
       drawBtn.disabled = false; drawBtn.textContent = 'Draw';
-      downloadBtn.disabled = false;
+      downloadBtn.disabled = false; fullsizeBtn.disabled = false;
       statusBar.textContent = `${res}×${res} · ${ms} ms · z ∈ [${zMin.toFixed(4)}, ${zMax.toFixed(4)}]`;
     }, 0);
 
@@ -615,7 +648,7 @@ function handleDraw() {
       const { zMin, zMax } = render3D(fn, colormap, rMin, rMax, rMin, rMax);
       const ms = (performance.now() - t0).toFixed(0);
       drawBtn.disabled = false; drawBtn.textContent = 'Draw';
-      downloadBtn.disabled = false;
+      downloadBtn.disabled = false; fullsizeBtn.disabled = false;
       statusBar.textContent = `3D ${segs}×${segs} grid · ${ms} ms · z ∈ [${zMin.toFixed(4)}, ${zMax.toFixed(4)}]`;
     }, 0);
   }
@@ -641,8 +674,14 @@ function handleDownload() {
 // === EVENTS ===
 modeBtn2d.addEventListener('click', () => { setMode('2d'); handleDraw(); });
 modeBtn3d.addEventListener('click', () => { setMode('3d'); handleDraw(); });
+function handleFullSize() {
+  const target = renderMode === '3d' ? threeContainer : canvasWrapper;
+  (target.requestFullscreen || target.webkitRequestFullscreen).call(target);
+}
+
 drawBtn.addEventListener('click', handleDraw);
 downloadBtn.addEventListener('click', handleDownload);
+fullsizeBtn.addEventListener('click', handleFullSize);
 exprInput.addEventListener('keydown', e => { if (e.key === 'Enter') handleDraw(); });
 
 presetSelect.addEventListener('change', () => {
