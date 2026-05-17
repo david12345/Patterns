@@ -503,9 +503,9 @@
     <div class="control-group">
       <label>x / y coordinate range</label>
       <div class="range-row">
-        <input type="number" id="range-min" value="-100" step="1">
+        <input type="text" inputmode="decimal" id="range-min" value="-1000">
         <span>to</span>
-        <input type="number" id="range-max" value="100" step="1">
+        <input type="text" inputmode="decimal" id="range-max" value="1000">
       </div>
     </div>
 
@@ -1704,7 +1704,8 @@ f2dUndoBtn.addEventListener('click', () => {
 });
 f2dResetBtn.addEventListener('click', () => {
   stopF2dInfZoom(true);
-  if (f2dPreZoomRange) { [rangeMinEl.value, rangeMaxEl.value] = f2dPreZoomRange; f2dPreZoomRange = null; }
+  rangeMinEl.value = '-1000'; rangeMaxEl.value = '1000';
+  f2dPreZoomRange = null;
   f2dBounds = null; f2dHistory = [];
   f2dInfZoomCx = f2dInfZoomCy = null;
   f2dUndoBtn.disabled = true;
