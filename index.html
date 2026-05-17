@@ -1272,7 +1272,7 @@ function startF2dInfZoom() {
   f2dInfZooming = true;
   f2dInfZoomBtn.textContent = '■ Stop';
   f2dInfZoomBtn.classList.add('infzooming');
-  mbMobileBar.classList.add('active', 'no-pan');
+  mbMobileBar.classList.add('active');
   selectionCanvas.style.pointerEvents = 'none';
   drawBtn.disabled = f2dUndoBtn.disabled = f2dResetBtn.disabled = true;
   f2dInfZoomT0  = performance.now();
@@ -1285,7 +1285,7 @@ function stopF2dInfZoom(freeze = false) {
   f2dInfZoomRAF = null; f2dInfZooming = false;
   f2dInfZoomBtn.textContent = '∞ Infinite Zoom';
   f2dInfZoomBtn.classList.remove('infzooming');
-  mbMobileBar.classList.remove('active', 'no-pan');
+  mbMobileBar.classList.remove('active');
   selectionCanvas.style.pointerEvents = '';
   drawBtn.disabled      = false;
   f2dResetBtn.disabled  = false;
@@ -1453,9 +1453,16 @@ f2dResetBtn.addEventListener('click', () => {
   handleDraw();
 });
 
-// Pan the Mandelbrot view (dx/dy in units of ±1; step = 25% of view half-width)
+// Pan the current view/zoom target (dx/dy in units of ±1; step = 25–30% of current scale)
 function panView(dx, dy) {
   if (voyaging) return;
+  if (f2dInfZooming) {
+    const elapsed = performance.now() - f2dInfZoomT0;
+    const scale = f2dInfZoomStartScale * Math.exp(-elapsed / F2D_INF_ZOOM_TC);
+    f2dInfZoomCx += dx * scale * 0.3;
+    f2dInfZoomCy += dy * scale * 0.3;
+    return;
+  }
   if (infZooming) {
     const elapsed = performance.now() - infZoomT0;
     const scale = infZoomStartScale * Math.exp(-elapsed / INF_ZOOM_TC);
