@@ -474,8 +474,9 @@
         <button id="newton-pan-down"  class="mb-dir-btn">&#9660;</button>
         <span></span>
       </div>
+      <button id="newton-infzoom-btn" class="mb-infzoom-btn">&#8734; Infinite Zoom</button>
       <div class="help-text" style="font-size:10px; margin-top:4px">
-        Drag: zoom region &nbsp;&middot;&nbsp; Arrows: pan
+        Drag: zoom region &nbsp;&middot;&nbsp; Click: set &#8734; target &nbsp;&middot;&nbsp; Arrows: pan
       </div>
     </div>
 
@@ -873,12 +874,13 @@ const NEWTON_POLYS = [
     df:(r,i)=>{ const[a,b]=cpow(r,i,3); return[4*a+1,4*b]; } },
 ];
 
-function renderNewton(canvas, poly, maxIter, xMin, xMax, yMin, yMax) {
+function renderNewton(canvas, poly, maxIter, xMin, xMax, yMin, yMax, colormap) {
   const W = canvas.width, H = canvas.height;
   const ctx = canvas.getContext('2d');
   const imageData = ctx.createImageData(W, H);
   const data = imageData.data;
   const TOL2 = 1e-12;
+  const colorfn = COLORMAPS[colormap] || COLORMAPS.rainbow;
 
   for (let py = 0; py < H; py++) {
     for (let px = 0; px < W; px++) {
@@ -899,10 +901,16 @@ function renderNewton(canvas, poly, maxIter, xMin, xMax, yMin, yMax) {
       const base = (py * W + px) * 4;
       if (iter === maxIter) {
         data[base]=10; data[base+1]=10; data[base+2]=15;
-      } else {
+      } else if (colormap === 'rainbow') {
+        // HSL Rainbow: hue from root angle (identifies which root), lightness from convergence speed
         const hue = ((Math.atan2(zi, zr) / (Math.PI*2)) + 1) % 1;
         const light = 0.2 + 0.6 * Math.pow(1 - iter / maxIter, 0.5);
         const [r,g,b] = hslToRgb(hue*360, 1.0, light);
+        data[base]=r; data[base+1]=g; data[base+2]=b;
+      } else {
+        // Other colormaps: map convergence speed through selected colormap
+        const t = Math.pow(1 - iter / maxIter, 0.5);
+        const [r,g,b] = colorfn(t);
         data[base]=r; data[base+1]=g; data[base+2]=b;
       }
       data[base+3] = 255;
@@ -933,6 +941,16 @@ let f2dPreZoomRange      = null;   // range inputs saved when f2d infzoom starts
 const F2D_INF_ZOOM_RES   = 250;
 const F2D_INF_ZOOM_TC    = 3000;   // ms per e-fold
 const F2D_INF_ZOOM_MIN   = 1e-12;  // precision stop threshold
+
+// === NEWTON INFINITE ZOOM STATE ===
+let newtonInfZooming        = false;
+let newtonInfZoomRAF        = null;
+let newtonInfZoomCx         = null;
+let newtonInfZoomCy         = null;
+let newtonInfZoomStartScale = 2.0;
+let newtonInfZoomT0         = 0;
+const NEWTON_INF_ZOOM_TC    = 3000;
+const NEWTON_INF_ZOOM_MIN   = 1e-12;
 
 // === VOYAGE STATE ===
 let voyaging    = false;
@@ -1023,10 +1041,11 @@ const newtonPolySel    = document.getElementById('newton-poly');
 const newtonMaxIterEl  = document.getElementById('newton-max-iter');
 const newtonUndoBtn    = document.getElementById('newton-undo-btn');
 const newtonResetBtn   = document.getElementById('newton-reset-btn');
-const newtonPanUp      = document.getElementById('newton-pan-up');
-const newtonPanDown    = document.getElementById('newton-pan-down');
-const newtonPanLeft    = document.getElementById('newton-pan-left');
-const newtonPanRight   = document.getElementById('newton-pan-right');
+const newtonPanUp         = document.getElementById('newton-pan-up');
+const newtonPanDown       = document.getElementById('newton-pan-down');
+const newtonPanLeft       = document.getElementById('newton-pan-left');
+const newtonPanRight      = document.getElementById('newton-pan-right');
+const newtonInfZoomBtn    = document.getElementById('newton-infzoom-btn');
 
 function openControls()  {
   controlsPanel.classList.add('panel-open');
@@ -1104,14 +1123,17 @@ function setMode(mode) {
     newtonBounds = { xMin: -2, xMax: 2, yMin: -2, yMax: 2 };
     newtonHistory = [];
     newtonUndoBtn.disabled = true;
+    newtonInfZoomCx = newtonInfZoomCy = null;
   }
 
-  if (mode !== 'mb2d') { stopVoyage(); stopInfZoom(); }
-  if (mode !== '2d')   { stopF2dInfZoom(); }
+  if (mode !== 'mb2d')   { stopVoyage(); stopInfZoom(); }
+  if (mode !== '2d')     { stopF2dInfZoom(); }
+  if (mode !== 'newton') { stopNewtonInfZoom(); }
 }
 
 function handleDraw() {
-  if (f2dInfZooming) stopF2dInfZoom(true);  // freeze last frame, don't recurse
+  if (f2dInfZooming) stopF2dInfZoom(true);        // freeze last frame, don't recurse
+  if (newtonInfZooming) stopNewtonInfZoom(true);  // same for Newton
   clearError();
   const colormap = colormapSel.value;
   const range = getRange();
@@ -1180,7 +1202,7 @@ function handleDraw() {
     statusBar.textContent = `rendering Newton ${res}×${res} · ${poly.label}…`;
     setTimeout(() => {
       const t0 = performance.now();
-      renderNewton(canvas, poly, maxIter, newtonBounds.xMin, newtonBounds.xMax, newtonBounds.yMin, newtonBounds.yMax);
+      renderNewton(canvas, poly, maxIter, newtonBounds.xMin, newtonBounds.xMax, newtonBounds.yMin, newtonBounds.yMax, colormap);
       const ms = (performance.now() - t0).toFixed(0);
       drawBtn.disabled = false; drawBtn.textContent = 'Draw';
       downloadBtn.disabled = false; fullsizeBtn.disabled = false;
@@ -1449,6 +1471,74 @@ function stopF2dInfZoom(freeze = false) {
 
 f2dInfZoomBtn.addEventListener('click', () => f2dInfZooming ? stopF2dInfZoom() : startF2dInfZoom());
 
+// === NEWTON INFINITE ZOOM ===
+function setNewtonInfZoomTarget(px, py) {
+  const [cx, cy] = canvasPixelToMath(px, py);
+  newtonInfZoomCx = cx; newtonInfZoomCy = cy;
+  newtonInfZoomStartScale = (newtonBounds.xMax - newtonBounds.xMin) / 2;
+  drawTargetMarker(px, py);
+  statusBar.textContent =
+    `Zoom target: (${cx.toFixed(6)}, ${cy.toFixed(6)}) — click ∞ Infinite Zoom to start`;
+}
+
+function newtonInfZoomStep(now) {
+  if (!newtonInfZooming) return;
+  const elapsed = now - newtonInfZoomT0;
+  const scale   = newtonInfZoomStartScale * Math.exp(-elapsed / NEWTON_INF_ZOOM_TC);
+
+  if (scale < NEWTON_INF_ZOOM_MIN) { stopNewtonInfZoom(true); return; }
+
+  newtonBounds = { xMin: newtonInfZoomCx - scale, xMax: newtonInfZoomCx + scale,
+                   yMin: newtonInfZoomCy - scale, yMax: newtonInfZoomCy + scale };
+  rangeMinEl.value = newtonBounds.xMin;
+  rangeMaxEl.value = newtonBounds.xMax;
+
+  const maxIter = Math.max(4, parseInt(newtonMaxIterEl.value, 10) || 64);
+  const poly = NEWTON_POLYS.find(p => p.id === newtonPolySel.value) || NEWTON_POLYS[0];
+  const _res = parseInt(resSel.value, 10);
+  if (canvas.width !== _res) { canvas.width = canvas.height = _res; }
+  renderNewton(canvas, poly, maxIter,
+    newtonBounds.xMin, newtonBounds.xMax, newtonBounds.yMin, newtonBounds.yMax,
+    colormapSel.value);
+
+  statusBar.textContent =
+    `Infinite Zoom: ×${(newtonInfZoomStartScale / scale).toExponential(1)} · ${poly.label}`;
+
+  newtonInfZoomRAF = requestAnimationFrame(newtonInfZoomStep);
+}
+
+function startNewtonInfZoom() {
+  if (newtonInfZoomCx === null) {
+    newtonInfZoomCx = (newtonBounds.xMin + newtonBounds.xMax) / 2;
+    newtonInfZoomCy = (newtonBounds.yMin + newtonBounds.yMax) / 2;
+    newtonInfZoomStartScale = (newtonBounds.xMax - newtonBounds.xMin) / 2;
+  }
+  newtonInfZooming = true;
+  newtonInfZoomBtn.textContent = '■ Stop';
+  newtonInfZoomBtn.classList.add('infzooming');
+  mbMobileBar.classList.add('active');
+  selectionCanvas.style.pointerEvents = 'none';
+  drawBtn.disabled = newtonUndoBtn.disabled = newtonResetBtn.disabled = true;
+  newtonInfZoomT0  = performance.now();
+  newtonInfZoomRAF = requestAnimationFrame(newtonInfZoomStep);
+}
+
+function stopNewtonInfZoom(freeze = false) {
+  if (!newtonInfZooming) return;
+  cancelAnimationFrame(newtonInfZoomRAF);
+  newtonInfZoomRAF = null; newtonInfZooming = false;
+  newtonInfZoomBtn.textContent = '∞ Infinite Zoom';
+  newtonInfZoomBtn.classList.remove('infzooming');
+  mbMobileBar.classList.remove('active');
+  selectionCanvas.style.pointerEvents = '';
+  drawBtn.disabled        = false;
+  newtonResetBtn.disabled = false;
+  newtonUndoBtn.disabled  = newtonHistory.length === 0;
+  if (!freeze) handleDraw();
+}
+
+newtonInfZoomBtn.addEventListener('click', () => newtonInfZooming ? stopNewtonInfZoom() : startNewtonInfZoom());
+
 // === MANDELBROT SELECTION ===
 
 // Convert a viewport client position to canvas logical pixels (clamped to canvas bounds).
@@ -1552,6 +1642,7 @@ window.addEventListener('mouseup', e => {
   if (Math.abs(px1 - px0) < 8 && Math.abs(py1 - py0) < 8) {
     if (renderMode === 'mb2d') setInfZoomTarget((px0 + px1) / 2, (py0 + py1) / 2);
     else if (renderMode === '2d') setF2dInfZoomTarget((px0 + px1) / 2, (py0 + py1) / 2);
+    else if (renderMode === 'newton') setNewtonInfZoomTarget((px0 + px1) / 2, (py0 + py1) / 2);
     else selectionCanvas.getContext('2d').clearRect(0, 0, selectionCanvas.width, selectionCanvas.height);
   } else {
     confirmSelection(px0, py0, px1, py1);
@@ -1580,6 +1671,7 @@ selectionCanvas.addEventListener('touchend', e => {
   if (Math.abs(px1 - px0) < 8 && Math.abs(py1 - py0) < 8) {
     if (renderMode === 'mb2d') setInfZoomTarget((px0 + px1) / 2, (py0 + py1) / 2);
     else if (renderMode === '2d') setF2dInfZoomTarget((px0 + px1) / 2, (py0 + py1) / 2);
+    else if (renderMode === 'newton') setNewtonInfZoomTarget((px0 + px1) / 2, (py0 + py1) / 2);
     else selectionCanvas.getContext('2d').clearRect(0, 0, selectionCanvas.width, selectionCanvas.height);
   } else {
     confirmSelection(px0, py0, px1, py1);
@@ -1629,6 +1721,13 @@ function panView(dx, dy) {
     f2dInfZoomCy += dy * scale * 0.3;
     return;
   }
+  if (newtonInfZooming) {
+    const elapsed = performance.now() - newtonInfZoomT0;
+    const scale = newtonInfZoomStartScale * Math.exp(-elapsed / NEWTON_INF_ZOOM_TC);
+    newtonInfZoomCx += dx * scale * 0.3;
+    newtonInfZoomCy += dy * scale * 0.3;
+    return;
+  }
   if (infZooming) {
     const elapsed = performance.now() - infZoomT0;
     const scale = infZoomStartScale * Math.exp(-elapsed / INF_ZOOM_TC);
@@ -1660,7 +1759,11 @@ panDownBtn.addEventListener('click',  () => panView( 0, -1));
 panLeftBtn.addEventListener('click',  () => panView(-1,  0));
 panRightBtn.addEventListener('click', () => panView( 1,  0));
 
-mobStopBtn.addEventListener('click',  () => renderMode === 'mb2d' ? stopInfZoom() : stopF2dInfZoom());
+mobStopBtn.addEventListener('click',  () => {
+  if (renderMode === 'mb2d') stopInfZoom();
+  else if (renderMode === 'newton') stopNewtonInfZoom();
+  else stopF2dInfZoom();
+});
 mobPanUp.addEventListener('click',    () => panView( 0,  1));
 mobPanDown.addEventListener('click',  () => panView( 0, -1));
 mobPanLeft.addEventListener('click',  () => panView(-1,  0));
