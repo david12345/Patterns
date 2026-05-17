@@ -1364,11 +1364,13 @@ function confirmSelection(px0, py0, px1, py1) {
     mbHistory.push({ ...mbBounds });
     undoZoomBtn.disabled = false;
     mbBounds = newBounds;
+    rangeMinEl.value = mbBounds.xMin; rangeMaxEl.value = mbBounds.xMax;
   } else if (renderMode === '2d') {
     const rn = parseFloat(rangeMinEl.value), rx = parseFloat(rangeMaxEl.value);
     f2dHistory.push(f2dBounds || { xMin: rn, xMax: rx, yMin: rn, yMax: rx });
     f2dUndoBtn.disabled = false;
     f2dBounds = newBounds;
+    rangeMinEl.value = f2dBounds.xMin; rangeMaxEl.value = f2dBounds.xMax;
   }
   selectionCanvas.getContext('2d').clearRect(0, 0, selectionCanvas.width, selectionCanvas.height);
   handleDraw();
@@ -1436,6 +1438,7 @@ undoZoomBtn.addEventListener('click', () => {
   if (mbHistory.length === 0) return;
   mbBounds = mbHistory.pop();
   undoZoomBtn.disabled = mbHistory.length === 0;
+  rangeMinEl.value = mbBounds.xMin; rangeMaxEl.value = mbBounds.xMax;
   handleDraw();
 });
 resetZoomBtn.addEventListener('click', () => {
@@ -1451,6 +1454,7 @@ f2dUndoBtn.addEventListener('click', () => {
   stopF2dInfZoom(true);
   f2dBounds = f2dHistory.pop();
   f2dUndoBtn.disabled = f2dHistory.length === 0;
+  rangeMinEl.value = f2dBounds.xMin; rangeMaxEl.value = f2dBounds.xMax;
   handleDraw();
 });
 f2dResetBtn.addEventListener('click', () => {
