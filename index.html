@@ -401,13 +401,15 @@
           <option value="sin(x*x + y*y) * atan(x*x + y*y)">Spiral decay</option>
         </select>
       </div>
-      <div class="mb-nav-row">
-        <button id="f2d-undo-zoom-btn" class="mb-nav-btn" disabled>&#8592; Undo zoom</button>
-        <button id="f2d-reset-zoom-btn" class="mb-nav-btn">Reset view</button>
-      </div>
-      <button id="f2d-infzoom-btn" class="mb-infzoom-btn">&#8734; Infinite Zoom</button>
-      <div class="help-text" style="font-size:10px; margin-top:4px">
-        Drag: zoom region &nbsp;&middot;&nbsp; Click: set &#8734; target
+      <div id="f2d-zoom-section">
+        <div class="mb-nav-row">
+          <button id="f2d-undo-zoom-btn" class="mb-nav-btn" disabled>&#8592; Undo zoom</button>
+          <button id="f2d-reset-zoom-btn" class="mb-nav-btn">Reset view</button>
+        </div>
+        <button id="f2d-infzoom-btn" class="mb-infzoom-btn">&#8734; Infinite Zoom</button>
+        <div class="help-text" style="font-size:10px; margin-top:4px">
+          Drag: zoom region &nbsp;&middot;&nbsp; Click: set &#8734; target
+        </div>
       </div>
     </div>
 
@@ -955,8 +957,9 @@ function setMode(mode) {
   ALL_MODE_BTNS.forEach(b => b.classList.remove('active'));
   ({ '2d': modeBtn2d, '3d': modeBtn3d, 'mb2d': modeBtnMb2d })[mode].classList.add('active');
 
-  // Selection overlay visible in Formula 2D and Mandelbrot 2D
+  // Selection overlay and zoom controls only in Formula 2D and Mandelbrot 2D
   selectionCanvas.style.display = (mode === 'mb2d' || mode === '2d') ? 'block' : 'none';
+  document.getElementById('f2d-zoom-section').style.display = mode === '2d' ? '' : 'none';
 
   // Reset state when first entering Mandelbrot 2D
   if (!wasMandelbrot && isMandelbrot) {
