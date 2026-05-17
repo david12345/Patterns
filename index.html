@@ -816,6 +816,7 @@ let f2dInfZoomCy         = null;
 let f2dInfZoomStartScale = 1.0;
 let f2dInfZoomT0         = 0;
 let f2dInfZoomFn         = null;   // compiled formula kept alive during animation
+let f2dPreZoomRange      = null;   // range inputs saved when f2d infzoom starts
 const F2D_INF_ZOOM_RES   = 250;
 const F2D_INF_ZOOM_TC    = 3000;   // ms per e-fold
 const F2D_INF_ZOOM_MIN   = 1e-12;  // precision stop threshold
@@ -1174,9 +1175,10 @@ function infZoomStep(now) {
 
   mbBounds = { xMin: infZoomCx - scale, xMax: infZoomCx + scale,
                yMin: infZoomCy - scale, yMax: infZoomCy + scale };
+  rangeMinEl.value = mbBounds.xMin;
+  rangeMaxEl.value = mbBounds.xMax;
 
-  const maxIter = Math.min(600, Math.max(100,
-    Math.round(200 + 60 * Math.log10(infZoomStartScale / scale))));
+  const maxIter = Math.max(10, parseInt(maxIterEl.value, 10) || 256);
 
   const _mbRes = parseInt(resSel.value, 10);
   if (canvas.width !== _mbRes) { canvas.width = canvas.height = _mbRes; }
@@ -1245,6 +1247,8 @@ function f2dInfZoomStep(now) {
 
   f2dBounds = { xMin: f2dInfZoomCx - scale, xMax: f2dInfZoomCx + scale,
                 yMin: f2dInfZoomCy - scale, yMax: f2dInfZoomCy + scale };
+  rangeMinEl.value = f2dBounds.xMin;
+  rangeMaxEl.value = f2dBounds.xMax;
 
   const _f2dRes = parseInt(resSel.value, 10);
   if (canvas.width !== _f2dRes) { canvas.width = canvas.height = _f2dRes; }
@@ -1271,6 +1275,7 @@ function startF2dInfZoom() {
     f2dInfZoomCy = (b.yMin + b.yMax) / 2;
     f2dInfZoomStartScale = (b.xMax - b.xMin) / 2;
   }
+  f2dPreZoomRange = [rangeMinEl.value, rangeMaxEl.value];
   f2dInfZooming = true;
   f2dInfZoomBtn.textContent = '■ Stop';
   f2dInfZoomBtn.classList.add('infzooming');
@@ -1437,6 +1442,7 @@ resetZoomBtn.addEventListener('click', () => {
   mbBounds = { xMin: -2, xMax: 2, yMin: -2, yMax: 2 };
   mbHistory = [];
   undoZoomBtn.disabled = true;
+  rangeMinEl.value = '-2'; rangeMaxEl.value = '2';
   handleDraw();
 });
 
@@ -1449,6 +1455,7 @@ f2dUndoBtn.addEventListener('click', () => {
 });
 f2dResetBtn.addEventListener('click', () => {
   stopF2dInfZoom(true);
+  if (f2dPreZoomRange) { [rangeMinEl.value, rangeMaxEl.value] = f2dPreZoomRange; f2dPreZoomRange = null; }
   f2dBounds = null; f2dHistory = [];
   f2dInfZoomCx = f2dInfZoomCy = null;
   f2dUndoBtn.disabled = true;
