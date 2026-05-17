@@ -250,6 +250,7 @@
     }
     @media (max-width: 700px) {
       #mb-mobile-bar.active { display: flex; }
+      #mb-mobile-bar.no-pan .mb-dir-btn { display: none; }
     }
 
     /* ── Three.js container ── */
@@ -404,7 +405,10 @@
         <button id="f2d-undo-zoom-btn" class="mb-nav-btn" disabled>&#8592; Undo zoom</button>
         <button id="f2d-reset-zoom-btn" class="mb-nav-btn">Reset view</button>
       </div>
-      <div class="help-text" style="font-size:10px; margin-top:4px">Drag: zoom region</div>
+      <button id="f2d-infzoom-btn" class="mb-infzoom-btn">&#8734; Infinite Zoom</button>
+      <div class="help-text" style="font-size:10px; margin-top:4px">
+        Drag: zoom region &nbsp;&middot;&nbsp; Click: set &#8734; target
+      </div>
     </div>
 
     <!-- Mandelbrot-specific controls -->
@@ -804,6 +808,18 @@ let mbHistory = [];
 let f2dBounds  = null;   // null = use range inputs; set when user drag-zooms in Formula 2D
 let f2dHistory = [];
 
+// === FORMULA 2D INFINITE ZOOM STATE ===
+let f2dInfZooming        = false;
+let f2dInfZoomRAF        = null;
+let f2dInfZoomCx         = null;   // null = no target set
+let f2dInfZoomCy         = null;
+let f2dInfZoomStartScale = 1.0;
+let f2dInfZoomT0         = 0;
+let f2dInfZoomFn         = null;   // compiled formula kept alive during animation
+const F2D_INF_ZOOM_RES   = 250;
+const F2D_INF_ZOOM_TC    = 3000;   // ms per e-fold
+const F2D_INF_ZOOM_MIN   = 1e-12;  // precision stop threshold
+
 // === VOYAGE STATE ===
 let voyaging    = false;
 let voyageRAF   = null;
@@ -875,6 +891,7 @@ const voyageBtn         = document.getElementById('voyage-btn');
 const infZoomBtn        = document.getElementById('infzoom-btn');
 const f2dUndoBtn        = document.getElementById('f2d-undo-zoom-btn');
 const f2dResetBtn       = document.getElementById('f2d-reset-zoom-btn');
+const f2dInfZoomBtn     = document.getElementById('f2d-infzoom-btn');
 const panUpBtn          = document.getElementById('pan-up-btn');
 const panDownBtn        = document.getElementById('pan-down-btn');
 const panLeftBtn        = document.getElementById('pan-left-btn');
@@ -951,13 +968,16 @@ function setMode(mode) {
   // Reset f2d zoom state when switching to Formula 2D from another mode
   if (wasMode !== '2d' && mode === '2d') {
     f2dBounds = null; f2dHistory = [];
+    f2dInfZoomCx = f2dInfZoomCy = null;
     f2dUndoBtn.disabled = true;
   }
 
   if (mode !== 'mb2d') { stopVoyage(); stopInfZoom(); }
+  if (mode !== '2d')   { stopF2dInfZoom(); }
 }
 
 function handleDraw() {
+  if (f2dInfZooming) stopF2dInfZoom(true);  // freeze last frame, don't recurse
   clearError();
   const colormap = colormapSel.value;
   const range = getRange();
@@ -1203,6 +1223,78 @@ function stopInfZoom(freeze = false) {
 
 infZoomBtn.addEventListener('click', () => infZooming ? stopInfZoom() : startInfZoom());
 
+// === FORMULA 2D INFINITE ZOOM ===
+function setF2dInfZoomTarget(px, py) {
+  const [cx, cy] = canvasPixelToMath(px, py);
+  f2dInfZoomCx = cx; f2dInfZoomCy = cy;
+  const b = f2dBounds || { xMin: parseFloat(rangeMinEl.value), xMax: parseFloat(rangeMaxEl.value),
+                            yMin: parseFloat(rangeMinEl.value), yMax: parseFloat(rangeMaxEl.value) };
+  f2dInfZoomStartScale = (b.xMax - b.xMin) / 2;
+  drawTargetMarker(px, py);
+  statusBar.textContent =
+    `Zoom target: (${cx.toFixed(6)}, ${cy.toFixed(6)}) — click ∞ Infinite Zoom to start`;
+}
+
+function f2dInfZoomStep(now) {
+  if (!f2dInfZooming) return;
+  const elapsed = now - f2dInfZoomT0;
+  const scale   = f2dInfZoomStartScale * Math.exp(-elapsed / F2D_INF_ZOOM_TC);
+
+  if (scale < F2D_INF_ZOOM_MIN) { stopF2dInfZoom(true); return; }
+
+  f2dBounds = { xMin: f2dInfZoomCx - scale, xMax: f2dInfZoomCx + scale,
+                yMin: f2dInfZoomCy - scale, yMax: f2dInfZoomCy + scale };
+
+  if (canvas.width !== F2D_INF_ZOOM_RES) { canvas.width = canvas.height = F2D_INF_ZOOM_RES; }
+  render2D(canvas, f2dInfZoomFn, colormapSel.value,
+    f2dBounds.xMin, f2dBounds.xMax, f2dBounds.yMin, f2dBounds.yMax);
+
+  statusBar.textContent =
+    `Infinite Zoom: ×${(f2dInfZoomStartScale / scale).toExponential(1)}`;
+
+  f2dInfZoomRAF = requestAnimationFrame(f2dInfZoomStep);
+}
+
+function startF2dInfZoom() {
+  const expr = exprInput.value.trim();
+  if (!expr) { showError('Please enter a function.'); return; }
+  const compiled = compileExpression(expr);
+  if (compiled.error) { showError('Error: ' + compiled.error); return; }
+  f2dInfZoomFn = compiled.fn;
+
+  if (f2dInfZoomCx === null) {
+    const b = f2dBounds || { xMin: parseFloat(rangeMinEl.value), xMax: parseFloat(rangeMaxEl.value),
+                              yMin: parseFloat(rangeMinEl.value), yMax: parseFloat(rangeMaxEl.value) };
+    f2dInfZoomCx = (b.xMin + b.xMax) / 2;
+    f2dInfZoomCy = (b.yMin + b.yMax) / 2;
+    f2dInfZoomStartScale = (b.xMax - b.xMin) / 2;
+  }
+  f2dInfZooming = true;
+  f2dInfZoomBtn.textContent = '■ Stop';
+  f2dInfZoomBtn.classList.add('infzooming');
+  mbMobileBar.classList.add('active', 'no-pan');
+  selectionCanvas.style.pointerEvents = 'none';
+  drawBtn.disabled = f2dUndoBtn.disabled = f2dResetBtn.disabled = true;
+  f2dInfZoomT0  = performance.now();
+  f2dInfZoomRAF = requestAnimationFrame(f2dInfZoomStep);
+}
+
+function stopF2dInfZoom(freeze = false) {
+  if (!f2dInfZooming) return;
+  cancelAnimationFrame(f2dInfZoomRAF);
+  f2dInfZoomRAF = null; f2dInfZooming = false;
+  f2dInfZoomBtn.textContent = '∞ Infinite Zoom';
+  f2dInfZoomBtn.classList.remove('infzooming');
+  mbMobileBar.classList.remove('active', 'no-pan');
+  selectionCanvas.style.pointerEvents = '';
+  drawBtn.disabled      = false;
+  f2dResetBtn.disabled  = false;
+  f2dUndoBtn.disabled   = f2dHistory.length === 0;
+  if (!freeze) handleDraw();
+}
+
+f2dInfZoomBtn.addEventListener('click', () => f2dInfZooming ? stopF2dInfZoom() : startF2dInfZoom());
+
 // === MANDELBROT SELECTION ===
 
 // Convert a viewport client position to canvas logical pixels (clamped to canvas bounds).
@@ -1298,6 +1390,7 @@ window.addEventListener('mouseup', e => {
   const [px1, py1] = clientToCanvasPixel(selCx1, selCy1);
   if (Math.abs(px1 - px0) < 8 && Math.abs(py1 - py0) < 8) {
     if (renderMode === 'mb2d') setInfZoomTarget((px0 + px1) / 2, (py0 + py1) / 2);
+    else if (renderMode === '2d') setF2dInfZoomTarget((px0 + px1) / 2, (py0 + py1) / 2);
     else selectionCanvas.getContext('2d').clearRect(0, 0, selectionCanvas.width, selectionCanvas.height);
   } else {
     confirmSelection(px0, py0, px1, py1);
@@ -1325,6 +1418,7 @@ selectionCanvas.addEventListener('touchend', e => {
   const [px1, py1] = clientToCanvasPixel(selCx1, selCy1);
   if (Math.abs(px1 - px0) < 8 && Math.abs(py1 - py0) < 8) {
     if (renderMode === 'mb2d') setInfZoomTarget((px0 + px1) / 2, (py0 + py1) / 2);
+    else if (renderMode === '2d') setF2dInfZoomTarget((px0 + px1) / 2, (py0 + py1) / 2);
     else selectionCanvas.getContext('2d').clearRect(0, 0, selectionCanvas.width, selectionCanvas.height);
   } else {
     confirmSelection(px0, py0, px1, py1);
@@ -1346,12 +1440,15 @@ resetZoomBtn.addEventListener('click', () => {
 
 f2dUndoBtn.addEventListener('click', () => {
   if (f2dHistory.length === 0) return;
+  stopF2dInfZoom(true);
   f2dBounds = f2dHistory.pop();
   f2dUndoBtn.disabled = f2dHistory.length === 0;
   handleDraw();
 });
 f2dResetBtn.addEventListener('click', () => {
+  stopF2dInfZoom(true);
   f2dBounds = null; f2dHistory = [];
+  f2dInfZoomCx = f2dInfZoomCy = null;
   f2dUndoBtn.disabled = true;
   handleDraw();
 });
@@ -1380,7 +1477,7 @@ panDownBtn.addEventListener('click',  () => panView( 0, -1));
 panLeftBtn.addEventListener('click',  () => panView(-1,  0));
 panRightBtn.addEventListener('click', () => panView( 1,  0));
 
-mobStopBtn.addEventListener('click',  () => stopInfZoom());
+mobStopBtn.addEventListener('click',  () => renderMode === 'mb2d' ? stopInfZoom() : stopF2dInfZoom());
 mobPanUp.addEventListener('click',    () => panView( 0,  1));
 mobPanDown.addEventListener('click',  () => panView( 0, -1));
 mobPanLeft.addEventListener('click',  () => panView(-1,  0));
@@ -1528,7 +1625,9 @@ presetSelect.addEventListener('change', () => {
   if (presetSelect.value) {
     exprInput.value = presetSelect.value;
     presetSelect.value = '';
+    stopF2dInfZoom(true);
     f2dBounds = null; f2dHistory = [];
+    f2dInfZoomCx = f2dInfZoomCy = null;
     f2dUndoBtn.disabled = true;
     handleDraw();
   }
