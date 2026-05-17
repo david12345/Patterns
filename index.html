@@ -1178,7 +1178,8 @@ function infZoomStep(now) {
   const maxIter = Math.min(600, Math.max(100,
     Math.round(200 + 60 * Math.log10(infZoomStartScale / scale))));
 
-  if (canvas.width !== INF_ZOOM_RES) { canvas.width = canvas.height = INF_ZOOM_RES; }
+  const _mbRes = parseInt(resSel.value, 10);
+  if (canvas.width !== _mbRes) { canvas.width = canvas.height = _mbRes; }
   renderMandelbrot2D(canvas, colormapSel.value,
     mbBounds.xMin, mbBounds.xMax, mbBounds.yMin, mbBounds.yMax, maxIter);
 
@@ -1245,7 +1246,8 @@ function f2dInfZoomStep(now) {
   f2dBounds = { xMin: f2dInfZoomCx - scale, xMax: f2dInfZoomCx + scale,
                 yMin: f2dInfZoomCy - scale, yMax: f2dInfZoomCy + scale };
 
-  if (canvas.width !== F2D_INF_ZOOM_RES) { canvas.width = canvas.height = F2D_INF_ZOOM_RES; }
+  const _f2dRes = parseInt(resSel.value, 10);
+  if (canvas.width !== _f2dRes) { canvas.width = canvas.height = _f2dRes; }
   render2D(canvas, f2dInfZoomFn, colormapSel.value,
     f2dBounds.xMin, f2dBounds.xMax, f2dBounds.yMin, f2dBounds.yMax);
 
