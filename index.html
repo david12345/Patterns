@@ -241,6 +241,17 @@
       padding: 8px; pointer-events: none;
     }
 
+    /* ── Mobile infzoom bar (above canvas, smartphone only) ── */
+    #mb-mobile-bar {
+      display: none;
+      width: 100%; max-width: 500px;
+      align-items: center; gap: 6px;
+      padding: 0 0 4px;
+    }
+    @media (max-width: 700px) {
+      #mb-mobile-bar.active { display: flex; }
+    }
+
     /* ── Three.js container ── */
     #three-container {
       display: none;
@@ -400,7 +411,7 @@
     <div id="mandelbrot-section" style="display:none">
       <div class="control-group">
         <label>Max iterations</label>
-        <input type="number" id="max-iter" value="1500" min="10" max="10000" step="64">
+        <input type="number" id="max-iter" value="256" min="10" max="10000" step="64">
       </div>
       <div class="mb-nav-row">
         <button id="undo-zoom-btn" class="mb-nav-btn" disabled>&#8592; Undo zoom</button>
@@ -474,6 +485,13 @@
   </div>
 
   <div id="canvas-area">
+    <div id="mb-mobile-bar">
+      <button id="mob-stop-btn" class="mb-infzoom-btn infzooming" style="flex:1; padding:10px">&#9632; Stop</button>
+      <button id="mob-pan-up"    class="mb-dir-btn">&#9650;</button>
+      <button id="mob-pan-left"  class="mb-dir-btn">&#9664;</button>
+      <button id="mob-pan-right" class="mb-dir-btn">&#9654;</button>
+      <button id="mob-pan-down"  class="mb-dir-btn">&#9660;</button>
+    </div>
     <div id="canvas-wrapper">
       <canvas id="pattern-canvas" width="600" height="600"></canvas>
       <canvas id="selection-canvas"></canvas>
@@ -862,6 +880,12 @@ const panDownBtn        = document.getElementById('pan-down-btn');
 const panLeftBtn        = document.getElementById('pan-left-btn');
 const panRightBtn       = document.getElementById('pan-right-btn');
 const MB_DIR_BTNS       = [panUpBtn, panDownBtn, panLeftBtn, panRightBtn];
+const mbMobileBar       = document.getElementById('mb-mobile-bar');
+const mobStopBtn        = document.getElementById('mob-stop-btn');
+const mobPanUp          = document.getElementById('mob-pan-up');
+const mobPanDown        = document.getElementById('mob-pan-down');
+const mobPanLeft        = document.getElementById('mob-pan-left');
+const mobPanRight       = document.getElementById('mob-pan-right');
 
 function openControls()  {
   controlsPanel.classList.add('panel-open');
@@ -1154,6 +1178,7 @@ function startInfZoom() {
   infZooming = true;
   infZoomBtn.textContent = '■ Stop';
   infZoomBtn.classList.add('infzooming');
+  mbMobileBar.classList.add('active');
   selectionCanvas.style.pointerEvents = 'none';
   drawBtn.disabled = undoZoomBtn.disabled =
     resetZoomBtn.disabled = voyageBtn.disabled = true;
@@ -1167,6 +1192,7 @@ function stopInfZoom(freeze = false) {
   infZoomRAF = null; infZooming = false;
   infZoomBtn.textContent = '∞ Infinite Zoom';
   infZoomBtn.classList.remove('infzooming');
+  mbMobileBar.classList.remove('active');
   selectionCanvas.style.pointerEvents = '';
   drawBtn.disabled      = false;
   resetZoomBtn.disabled = false;
@@ -1353,6 +1379,12 @@ panUpBtn.addEventListener('click',    () => panView( 0,  1));
 panDownBtn.addEventListener('click',  () => panView( 0, -1));
 panLeftBtn.addEventListener('click',  () => panView(-1,  0));
 panRightBtn.addEventListener('click', () => panView( 1,  0));
+
+mobStopBtn.addEventListener('click',  () => stopInfZoom());
+mobPanUp.addEventListener('click',    () => panView( 0,  1));
+mobPanDown.addEventListener('click',  () => panView( 0, -1));
+mobPanLeft.addEventListener('click',  () => panView(-1,  0));
+mobPanRight.addEventListener('click', () => panView( 1,  0));
 
 // === EVENTS ===
 modeBtn2d.addEventListener('click',   () => { setMode('2d');   handleDraw(); });
